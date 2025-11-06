@@ -2,9 +2,28 @@
 
 set -euo pipefail
 
-msg() { echo -e "[*] $*"; }
-ok()  { echo -e "[+] $*"; }
-err() { echo -e "[!] $*" >&2; }
+BOLD=$'\e[1m'
+DIM=$'\e[2m'
+ITALIC=$'\e[3m'      # Not supported in all terminals; harmless if ignored
+UNDER=$'\e[4m'
+RED=$'\e[31m'
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+BLUE=$'\e[34m'
+MAGENTA=$'\e[35m'
+CYAN=$'\e[36m'
+RESET=$'\e[0m'
+
+msg() { echo -e "${CYAN}[*]${RESET} $*"; }
+ok()  { echo -e "${GREEN}[+]${RESET} $*"; }
+warn(){ echo -e "${YELLOW}[~]${RESET} $*"; }
+err() { echo -e "${RED}[!]${RESET} $*" >&2; }
+
+banner() {
+  echo -e "${BOLD}${BLUE}────────────────────────────────────────────────────────────${RESET}"
+  echo -e "${BOLD}${BLUE}  Sudo User Creator • SSH Key Migration • Root Hardening     ${RESET}"
+  echo -e "${BOLD}${BLUE}────────────────────────────────────────────────────────────${RESET}"
+}
 
 require_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
@@ -14,10 +33,31 @@ require_root() {
 }
 
 prompt_yes_no() {
-  local prompt="${1:-Continue? [y/N]} "
+  local prompt="$1"
+  local default="${2:-N}" # default N if not provided
+  local hint="[y/N]"
+  [[ "${default^^}" == "Y" ]] && hint="[Y/n]"
+
   local ans
-  read -r -p "$prompt" ans || true
-  [[ "${ans,,}" == "y" || "${ans,,}" == "yes" ]]
+  read -r -p "$(echo -e "${BOLD}${prompt}${RESET} ${DIM}${hint}${RESET} ")" ans || true
+  ans="${ans,,}"
+
+  if [[ -z "$ans" ]]; then
+    [[ "${default^^}" == "Y" ]] && return 0 || return 1
+  fi
+  [[ "$ans" == "y" || "$ans" == "yes" ]]
+}
+
+read_with_default() {
+  local prompt="$1"
+  local def="$2"
+  local ans
+  read -r -p "$(echo -e "${BOLD}${prompt}${RESET} ${DIM}[${def}]${RESET}: ")" ans || true
+  if [[ -z "$ans" ]]; then
+    echo -n "$def"
+  else
+    echo -n "$ans"
+  fi
 }
 
 username_is_valid() {
@@ -47,7 +87,7 @@ disable_root_ssh_login() {
   local sshd_cfg="/etc/ssh/sshd_config"
   local backup="/etc/ssh/sshd_config.$(date +%Y%m%d-%H%M%S).bak"
   cp -a "$sshd_cfg" "$backup"
-  ok "Backed up $sshd_cfg to $backup"
+  ok "Backed up ${BOLD}$sshd_cfg${RESET} to ${BOLD}$backup${RESET}"
 
   if grep -qiE '^\s*PermitRootLogin' "$sshd_cfg"; then
     sed -i 's/^\s*PermitRootLogin\s\+.*/# &/I' "$sshd_cfg"
@@ -67,82 +107,97 @@ disable_root_ssh_login() {
   fi
 
   systemctl restart ssh || systemctl restart sshd
-  ok "Root SSH login disabled and SSH service restarted."
+  ok "Root SSH login ${BOLD}disabled${RESET} and SSH service restarted."
 }
 
-require_root
+main() {
+  banner
+  require_root
 
-msg "This helper can create a non-root (sudo) user and migrate your current SSH keys."
-msg "It can also disable root SSH login AFTER the keys are copied."
-echo
+  msg "This helper can ${BOLD}create a non-root (sudo) user${RESET} and ${BOLD}migrate your current SSH keys${RESET}."
+  msg "It can also ${BOLD}disable root SSH login${RESET} after the new user is set up."
+  echo
 
-if ! prompt_yes_no "Proceed to create a non-root (sudo) user and disable root SSH login? [y/N] "; then
-  msg "No changes made. Exiting."
-  exit 0
-fi
+  # Default decisions
+  local default_proceed="Y"        # default Proceed?  -> Yes
+  local default_user="nodeadmin"   # default username -> nodeadmin
+  local default_disable_root="Y"   # default Disable root SSH now? -> Yes
 
-# Ask for username
-new_user=""
-while true; do
-  read -r -p "Enter the new username (lowercase letters, digits, -, _ ; must start with a letter): " new_user || true
-  new_user="${new_user,,}"
-  if [[ -z "$new_user" ]]; then
-    err "Username cannot be empty."
-    continue
+  if ! prompt_yes_no "Proceed to create a non-root (sudo) user and migrate SSH keys?" "$default_proceed"; then
+    warn "No changes made. Exiting."
+    exit 0
   fi
-  if ! username_is_valid "$new_user"; then
-    err "Invalid username. Example valid names: alice, nodeadmin, dev_ops"
-    continue
-  fi
-  if id "$new_user" >/dev/null 2>&1; then
-    err "User '$new_user' already exists. Choose another."
-    continue
-  fi
-  break
-done
 
-echo
-msg "You'll now set a password for '$new_user'."
+  local new_user=""
+  while true; do
+    new_user="$(read_with_default "Enter the new ${ITALIC}username${RESET} (lowercase; start with a letter; may contain digits, - or _)" "$default_user")"
+    new_user="${new_user,,}"
+    if ! username_is_valid "$new_user"; then
+      err "Invalid username. Use lowercase, start with a letter, then letters/digits/-/_ (max 32). Examples: alice, nodeadmin, dev_ops"
+      continue
+    fi
+    if id "$new_user" >/dev/null 2>&1; then
+      warn "User '${BOLD}$new_user${RESET}' already exists."
+      for i in {1..9}; do
+        if ! id "${new_user}${i}" >/dev/null 2>&1; then
+          local suggestion="${new_user}${i}"
+          new_user="$(read_with_default "Pick another username" "$suggestion")"
+          new_user="${new_user,,}"
+          break
+        fi
+      done
+      continue
+    fi
+    break
+  done
 
-cat <<'EOF'
+  echo
+  msg "You'll now set a password for '${BOLD}$new_user${RESET}'."
+  cat <<'EOF'
+
 Password tips:
-+ Allowed (and recommended): Letters (A-Z, a-z), Numbers (0-9), and symbols:
-    !  @  #  %  ^  +  =  _  -  .  ,
-x  Avoid when possible (these can possibly cause issues in some shells/tools):
-    !!   !$   `   '   "   \   |   &   ;   <   >   *   ?   [   ]   ~   $
+  ✓ Allowed (and recommended): Letters (A-Z, a-z), Numbers (0-9), and symbols:
+      !  @  #  %  ^  +  =  _  -  .  ,
+  ⚠ Avoid when possible (can cause issues in some shells/tools):
+      !!   !$   `   '   "   \   |   &   ;   <   >   *   ?   [   ]   ~   $
+
 EOF
-echo
 
-adduser --disabled-password --gecos "" "$new_user"
-ok "User '$new_user' created."
+  adduser --disabled-password --gecos "" "$new_user"
+  ok "User '${BOLD}$new_user${RESET}' created."
 
-passwd "$new_user"
+  passwd "$new_user"
 
-usermod -aG sudo "$new_user"
-ok "User '$new_user' added to 'sudo' group."
+  usermod -aG sudo "$new_user"
+  ok "User '${BOLD}$new_user${RESET}' added to '${BOLD}sudo${RESET}' group."
 
-src_keys="$(ensure_authorized_keys)"
-if [[ -z "$src_keys" ]]; then
-  err "No existing authorized_keys found for root (or SUDO_USER)."
-  err "Skipping SSH key migration. You can create $new_user's keys later."
-else
-  dest_home="$(eval echo "~$new_user")"
-  install -d -m 700 "$dest_home/.ssh"
-  install -m 600 "$src_keys" "$dest_home/.ssh/authorized_keys"
-  harden_permissions "$new_user"
-  ok "SSH authorized_keys copied from '$src_keys' to $dest_home/.ssh/authorized_keys"
-fi
+  local src_keys dest_home
+  src_keys="$(ensure_authorized_keys)"
+  if [[ -z "$src_keys" ]]; then
+    warn "No existing ${BOLD}authorized_keys${RESET} found for root (or SUDO_USER)."
+    warn "Skipping SSH key migration. You can add keys later for ${BOLD}$new_user${RESET}."
+  else
+    dest_home="$(eval echo "~$new_user")"
+    install -d -m 700 "$dest_home/.ssh"
+    install -m 600 "$src_keys" "$dest_home/.ssh/authorized_keys"
+    harden_permissions "$new_user"
+    ok "SSH ${BOLD}authorized_keys${RESET} copied from '${BOLD}$src_keys${RESET}' to '${BOLD}$dest_home/.ssh/authorized_keys${RESET}'."
+  fi
 
-echo
-msg "Quick access check (optional): try this in another terminal BEFORE disabling root login:"
-echo "    ssh ${new_user}@<server_ip>"
-echo
+  echo
+  msg "Quick access check (recommended): open another terminal and test:"
+  echo -e "  ${BOLD}ssh ${new_user}@<server_ip>${RESET}"
+  echo
 
-if prompt_yes_no "Disable root SSH login now and restart SSH? (Recommended) [y/N] "; then
-  disable_root_ssh_login
-  ok "All done. Next time, log in as: ssh ${new_user}@<server_ip>"
-else
-  msg "Left root SSH login ENABLED (you can disable it later)."
-fi
+  if prompt_yes_no "Disable root SSH login now and restart SSH?" "$default_disable_root"; then
+    disable_root_ssh_login
+    ok "All done. Next time, log in as: ${BOLD}ssh ${new_user}@<server_ip>${RESET}"
+  else
+    warn "Left root SSH login ${BOLD}ENABLED${RESET}. You can disable it later after testing."
+  fi
 
-ok "Script completed."
+  echo
+  ok "Script completed."
+}
+
+main "$@"
