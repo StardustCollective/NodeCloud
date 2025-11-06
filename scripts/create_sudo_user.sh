@@ -118,7 +118,7 @@ main() {
   banner
   require_root
 
-  msg "This helper can ${BOLD}create a non-root (sudo) user${RESET} and ${BOLD}migrate your current SSH keys${RESET}."
+  msg "This script can ${BOLD}create a non-root (sudo) user${RESET} and ${BOLD}migrate your current SSH keys${RESET}."
   msg "It can also ${BOLD}disable root SSH login${RESET} after the new user is set up."
   echo
 
