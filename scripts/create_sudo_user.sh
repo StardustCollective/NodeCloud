@@ -20,7 +20,6 @@ warn(){ echo -e "${YELLOW}[~]${RESET} $*"; }
 err() { echo -e "${RED}[!]${RESET} $*" >&2; }
 
 banner() {
-  clear
   echo -e "${BOLD}${BLUE}────────────────────────────────────────────────────────────${RESET}"
   echo -e "${BOLD}${BLUE}  Sudo User Creator • SSH Key Migration • Root Hardening     ${RESET}"
   echo -e "${BOLD}${BLUE}────────────────────────────────────────────────────────────${RESET}"
@@ -112,6 +111,7 @@ disable_root_ssh_login() {
 }
 
 main() {
+  clear
   banner
   require_root
 
