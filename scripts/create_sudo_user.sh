@@ -122,14 +122,13 @@ main() {
   msg "It can also ${BOLD}disable root SSH login${RESET} after the new user is set up."
   echo
 
-  # Default decisions
-  local default_proceed="Y"        # default Proceed?  -> Yes
-  local default_user="nodeadmin"   # default username -> nodeadmin
-  local default_disable_root="Y"   # default Disable root SSH now? -> Yes
+  local default_proceed="Y"        # Proceed? default Yes
+  local default_user="nodeadmin"   # Suggested username
+  local default_disable_root="Y"   # Disable root SSH after setup? default Yes
 
   if ! prompt_yes_no "Proceed to create a non-root (sudo) user and migrate SSH keys?" "$default_proceed"; then
     warn "No changes made. Exiting."
-    exit 0
+    return 0
   fi
 
   local new_user=""
@@ -142,14 +141,15 @@ main() {
     fi
     if id "$new_user" >/dev/null 2>&1; then
       warn "User '${BOLD}$new_user${RESET}' already exists."
+      local suggestion=""
       for i in {1..9}; do
         if ! id "${new_user}${i}" >/dev/null 2>&1; then
-          local suggestion="${new_user}${i}"
-          new_user="$(read_with_default "Pick another username" "$suggestion")"
-          new_user="${new_user,,}"
+          suggestion="${new_user}${i}"
           break
         fi
       done
+      new_user="$(read_with_default "Pick another username" "${suggestion:-${new_user}1}")"
+      new_user="${new_user,,}"
       continue
     fi
     break
@@ -160,32 +160,91 @@ main() {
   cat <<'EOF'
 
 Password tips:
-  ✓ Allowed (and recommended): Letters (A-Z, a-z), Numbers (0-9), and symbols:
+  ✓ Allowed (and recommended): Letters (A–Z, a–z), Numbers (0–9), and symbols:
       !  @  #  %  ^  +  =  _  -  .  ,
-  ⚠ Avoid when possible (can cause issues in some shells/tools):
+  ⚠ Avoid when possible (can be error-prone when pasted/typed in some shells/tools):
       !!   !$   `   '   "   \   |   &   ;   <   >   *   ?   [   ]   ~   $
+(These are NOT forbidden — just more likely to cause copy/paste or shell interpretation issues.)
 
 EOF
 
-  adduser --disabled-password --gecos "" "$new_user"
-  ok "User '${BOLD}$new_user${RESET}' created."
+  local pw1="" pw2=""
+  while true; do
+    read -rs -p "Enter password for ${new_user}: " pw1; echo
+    read -rs -p "Confirm password: " pw2; echo
+    if [[ -z "$pw1" ]]; then
+      err "Password cannot be empty."
+      continue
+    fi
+    if [[ "$pw1" != "$pw2" ]]; then
+      err "Passwords do not match. Try again."
+      continue
+    fi
+    break
+  done
 
-  passwd "$new_user"
+  echo
+  local disable_root_after="N"
+  if prompt_yes_no "Disable root SSH login after setup?" "$default_disable_root"; then
+    disable_root_after="Y"
+  fi
 
-  usermod -aG sudo "$new_user"
-  ok "User '${BOLD}$new_user${RESET}' added to '${BOLD}sudo${RESET}' group."
-
-  local src_keys dest_home
+  local src_keys=""
   src_keys="$(ensure_authorized_keys)"
   if [[ -z "$src_keys" ]]; then
-    warn "No existing ${BOLD}authorized_keys${RESET} found for root (or SUDO_USER)."
-    warn "Skipping SSH key migration. You can add keys later for ${BOLD}$new_user${RESET}."
+    warn "No existing ${BOLD}authorized_keys${RESET} found for root (or SUDO_USER). Key migration will be skipped."
+    if ! prompt_yes_no "Continue without migrating SSH keys?" "Y"; then
+      warn "No changes made. Exiting."
+      unset pw1 pw2
+      return 0
+    fi
   else
+    ok "Will copy keys from: ${BOLD}$src_keys${RESET}"
+  fi
+
+  echo
+  echo -e "${BOLD}${BLUE}Summary of actions (no changes yet):${RESET}"
+  echo -e "  New username     : ${BOLD}$new_user${RESET}"
+  echo -e "  SSH key source   : ${BOLD}${src_keys:-<none>}${RESET}"
+  echo -e "  Disable root SSH : ${BOLD}$([[ "$disable_root_after" == "Y" ]] && echo Yes || echo No)${RESET}"
+  echo -e "  Password         : ${BOLD}********${RESET}"
+  echo
+  if ! prompt_yes_no "Apply these changes now?" "Y"; then
+    warn "Cancelled. No changes made."
+    unset pw1 pw2
+    return 0
+  fi
+
+  msg "Creating user '${BOLD}$new_user${RESET}'..."
+  if ! adduser --disabled-password --gecos "" "$new_user" >/dev/null; then
+    err "User creation failed. Aborting."
+    unset pw1 pw2
+    return 1
+  fi
+  ok "User '${BOLD}$new_user${RESET}' created."
+
+  if ! printf '%s:%s\n' "$new_user" "$pw1" | chpasswd; then
+    err "Failed to set password for '$new_user'. Rolling back."
+    deluser --remove-home "$new_user" >/dev/null 2>&1 || true
+    unset pw1 pw2
+    return 1
+  fi
+  unset pw1 pw2
+  ok "Password set for '${BOLD}$new_user${RESET}'."
+
+  if usermod -aG sudo "$new_user" >/dev/null 2>&1; then
+    ok "User '${BOLD}$new_user${RESET}' added to '${BOLD}sudo${RESET}' group."
+  else
+    err "Failed to add '${new_user}' to sudo group."
+  fi
+
+  local dest_home=""
+  if [[ -n "$src_keys" ]]; then
     dest_home="$(eval echo "~$new_user")"
     install -d -m 700 "$dest_home/.ssh"
     install -m 600 "$src_keys" "$dest_home/.ssh/authorized_keys"
     harden_permissions "$new_user"
-    ok "SSH ${BOLD}authorized_keys${RESET} copied from '${BOLD}$src_keys${RESET}' to '${BOLD}$dest_home/.ssh/authorized_keys${RESET}'."
+    ok "SSH ${BOLD}authorized_keys${RESET} copied to '${BOLD}$dest_home/.ssh/authorized_keys${RESET}'."
   fi
 
   echo
@@ -193,7 +252,7 @@ EOF
   echo -e "  ${BOLD}ssh ${new_user}@<server_ip>${RESET}"
   echo
 
-  if prompt_yes_no "Disable root SSH login now and restart SSH?" "$default_disable_root"; then
+  if [[ "$disable_root_after" == "Y" ]]; then
     disable_root_ssh_login
     ok "All done. Next time, log in as: ${BOLD}ssh ${new_user}@<server_ip>${RESET}"
   else
