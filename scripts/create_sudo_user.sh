@@ -132,9 +132,11 @@ main() {
   fi
 
   local new_user=""
-  local base_default="$default_user"
+  local prompt="Enter the new ${ITALIC}username${RESET} (lowercase; start with a letter; may contain digits, - or _)"
+  local def="$default_user"
+
   while true; do
-    new_user="$(read_with_default "Enter the new ${ITALIC}username${RESET} (lowercase; start with a letter; may contain digits, - or _)" "$base_default")"
+    new_user="$(read_with_default "$prompt" "$def")"
     new_user="${new_user,,}"
 
     if ! username_is_valid "$new_user"; then
@@ -151,7 +153,8 @@ main() {
           break
         fi
       done
-      base_default="${suggestion:-${new_user}1}"
+      def="${suggestion:-${new_user}1}"
+      prompt="Enter the new ${ITALIC}username${RESET} (taken; suggested: ${BOLD}${def}${RESET})"
       continue
     fi
 
