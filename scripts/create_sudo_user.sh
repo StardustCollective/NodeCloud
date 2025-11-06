@@ -163,16 +163,15 @@ main() {
 
   echo
   msg "You'll now set a password for '${BOLD}$new_user${RESET}'."
+  echo -e "${CYAN}"
   cat <<'EOF'
-
 Password tips:
-  ✓ Allowed (and recommended): Letters (A–Z, a–z), Numbers (0–9), and symbols:
+  ✓ Allowed (and recommended): Letters (A-Z, a-z), Numbers (0-9), and symbols:
       !  @  #  %  ^  +  =  _  -  .  ,
   ⚠ Avoid when possible (can be error-prone when pasted/typed in some shells/tools):
       !!   !$   `   '   "   \   |   &   ;   <   >   *   ?   [   ]   ~   $
-(These are NOT forbidden — just more likely to cause copy/paste or shell interpretation issues.)
-
 EOF
+  echo -e "${RESET}"
 
   local pw1="" pw2=""
   while true; do
@@ -257,13 +256,13 @@ EOF
 
   if [[ "$disable_root_after" == "Y" ]]; then
     disable_root_ssh_login
-    ok "All done. Next time, log in as: ${BOLD}ssh ${new_user}@<server_ip>${RESET}"
+    ok "All done. Next time, log in as: ${BOLD}${new_user}${RESET}"
   else
     warn "Left root SSH login ${BOLD}ENABLED${RESET}. You can disable it later after testing."
   fi
 
   echo
-  ok "Script completed."
+  ok "${BOLD}${GREEN} ${new_user} created!${RESET}"
 }
 
 main "$@"
