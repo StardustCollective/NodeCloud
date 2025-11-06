@@ -254,9 +254,6 @@ EOF
   fi
 
   echo
-  msg "Quick access check (recommended): open another terminal and test:"
-  echo -e "  ${BOLD}ssh ${new_user}@<server_ip>${RESET}"
-  echo
 
   if [[ "$disable_root_after" == "Y" ]]; then
     disable_root_ssh_login
