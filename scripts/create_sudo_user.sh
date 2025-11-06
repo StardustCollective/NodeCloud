@@ -262,7 +262,7 @@ EOF
   fi
 
   echo
-  ok "${BOLD}${GREEN} ${new_user} created!${RESET}"
+  ok "${BOLD}${CYAN} ${new_user} created!${RESET}"
 }
 
 main "$@"
