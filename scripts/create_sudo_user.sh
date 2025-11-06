@@ -132,13 +132,16 @@ main() {
   fi
 
   local new_user=""
+  local base_default="$default_user"
   while true; do
-    new_user="$(read_with_default "Enter the new ${ITALIC}username${RESET} (lowercase; start with a letter; may contain digits, - or _)" "$default_user")"
+    new_user="$(read_with_default "Enter the new ${ITALIC}username${RESET} (lowercase; start with a letter; may contain digits, - or _)" "$base_default")"
     new_user="${new_user,,}"
+
     if ! username_is_valid "$new_user"; then
       err "Invalid username. Use lowercase, start with a letter, then letters/digits/-/_ (max 32). Examples: alice, nodeadmin, dev_ops"
       continue
     fi
+
     if id "$new_user" >/dev/null 2>&1; then
       warn "User '${BOLD}$new_user${RESET}' already exists."
       local suggestion=""
@@ -148,10 +151,10 @@ main() {
           break
         fi
       done
-      new_user="$(read_with_default "Pick another username" "${suggestion:-${new_user}1}")"
-      new_user="${new_user,,}"
+      base_default="${suggestion:-${new_user}1}"
       continue
     fi
+
     break
   done
 
