@@ -102,6 +102,16 @@ disable_root_ssh_login() {
     sed -i 's/^\s*PermitRootLogin\s\+yes/# &/I' /etc/ssh/sshd_config.d/*.conf || true
   fi
 
+  if grep -qiE '^\s*Match User root' "$sshd_cfg"; then
+    sed -i '/^\s*Match User root/,$d' "$sshd_cfg"
+  fi
+  {
+    echo ""
+    echo "Match User root"
+    echo "  PasswordAuthentication no"
+    echo "  PermitRootLogin no"
+  } >> "$sshd_cfg"
+
   if ! sshd -t 2>/tmp/sshd_test.err; then
     err "sshd config test failed:"
     cat /tmp/sshd_test.err >&2
@@ -111,7 +121,17 @@ disable_root_ssh_login() {
   fi
 
   systemctl restart ssh || systemctl restart sshd
-  ok "Root SSH login ${BOLD}disabled${RESET} and SSH service restarted."
+  ok "Root SSH login ${BOLD}disabled${RESET} and service restarted."
+
+  passwd -l root >/dev/null 2>&1 || true
+  ok "Root account password ${BOLD}locked${RESET}."
+
+  if [ -f /root/.ssh/authorized_keys ]; then
+    mv /root/.ssh/authorized_keys /root/.ssh/authorized_keys.disabled 2>/dev/null || true
+    ok "Root SSH authorized_keys ${BOLD}disabled${RESET}."
+  fi
+
+  ok "Root access fully hardened — SSH and password login are disabled."
 }
 
 main() {
