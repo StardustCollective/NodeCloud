@@ -119,15 +119,16 @@ function Get-ScpBase {
 function Invoke-Remote {
     param(
         [string]$User,
-        [string]$Host,
+        [string]$ServerHost,
         [string]$Command
     )
 
-    $target = "$($User)@$($Host)"
+    # Build ssh args safely
+    $target = "$($User)@$($ServerHost)"
     $args = (Get-SshBase) + @($target, $Command)
 
     Write-Host ""
-    Write-Host ("Running on {0}@{1}:" -f $User, $Host) -ForegroundColor $Gray
+    Write-Host ("Running on {0}@{1}:" -f $User, $ServerHost) -ForegroundColor $Gray
     Write-Host "  $Command" -ForegroundColor $Gray
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -168,7 +169,7 @@ function Run-CreateNonRootUser {
 
     $cmd = "rm -f create_sudo_user.sh && curl -fsSL -o create_sudo_user.sh https://github.com/StardustCollective/NodeCloud/raw/main/scripts/create_sudo_user.sh && sudo bash create_sudo_user.sh"
     try {
-        $null = Invoke-Remote -User $script:Config.NewServerUser -Host $script:Config.NewServerHost -Command $cmd
+        $null = Invoke-Remote -User $script:Config.NewServerUser -ServerHost $script:Config.NewServerHost -Command $cmd
         Write-Host ""
         Write-Host "create_sudo_user.sh completed. Reconnect as your new sudo user (e.g. nodeadmin) before continuing." -ForegroundColor $Green
     } catch {
@@ -240,7 +241,7 @@ find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordin
 "@.Trim()
 
     try {
-        $output = Invoke-Remote -User $script:Config.OldServerUser -Host $script:Config.OldServerHost -Command $findCmd
+        $output = Invoke-Remote -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $findCmd
     } catch {
         Write-Host ""
         Write-Host "Failed to search for P12 files:" -ForegroundColor $Red
@@ -269,7 +270,7 @@ find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordin
     $remoteBackupPath = "$remoteBackupDir/$fileName"
 
     $backupCmd = "mkdir -p $remoteBackupDir && if [ -e '$remoteBackupPath' ]; then echo 'EXISTS'; else echo 'OK'; fi"
-    $status = Invoke-Remote -User $script:Config.OldServerUser -Host $script:Config.OldServerHost -Command $backupCmd
+    $status = Invoke-Remote -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $backupCmd
     $status = $status.Trim()
 
     if ($status -eq "EXISTS") {
@@ -282,7 +283,7 @@ find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordin
 
     $copyCmd = "mkdir -p $remoteBackupDir && cp -f '$selected' '$remoteBackupPath'"
     try {
-        $null = Invoke-Remote -User $script:Config.OldServerUser -Host $script:Config.OldServerHost -Command $copyCmd
+        $null = Invoke-Remote -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $copyCmd
     } catch {
         Write-Host ""
         Write-Host "Failed to copy P12 into backup folder on old server:" -ForegroundColor $Red
