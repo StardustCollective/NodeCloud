@@ -11,6 +11,8 @@ YELLOW="\033[33m"
 RED="\033[31m"
 NC="\033[0m"
 
+P12_ALIAS=""
+
 clear
 echo -e "${CYAN}==============================================================${NC}"
 echo -e "${CYAN}                    STARDUST COLLECTIVE${NC}"
@@ -44,7 +46,30 @@ verify_p12_password() {
     local pass="$2"
 
     echo "" | openssl pkcs12 -in "$file" -nokeys -passin pass:"$pass" -passout pass:"dummy" >/dev/null 2>&1
+    if [[ $? -eq 0 ]]; then
+        return 0
+    fi
+
+    echo "" | openssl pkcs12 -in "$file" -legacy -nokeys -passin pass:"$pass" -passout pass:"dummy" >/dev/null 2>&1
     return $?
+}
+
+extract_p12_alias() {
+    local file="$1"
+    local pass="$2"
+    local alias
+
+    alias=$(openssl pkcs12 -in "$file" -nokeys -info -passin pass:"$pass" 2>&1 | awk -F': ' '/friendlyName/ {print $2; exit}')
+    if [[ -z "$alias" ]]; then
+        alias=$(openssl pkcs12 -in "$file" -legacy -nokeys -info -passin pass:"$pass" 2>&1 | awk -F': ' '/friendlyName/ {print $2; exit}')
+    fi
+
+    if [[ -n "$alias" ]]; then
+        P12_ALIAS="$alias"
+        return 0
+    else
+        return 1
+    fi
 }
 
 KNOWN_HOSTS="$HOME/.ssh/known_hosts"
@@ -172,6 +197,14 @@ for attempt in {1..12}; do
     verify_p12_password "$P12_FILE" "$P12_PASS"
     if [[ $? -eq 0 ]]; then
         echo -e "${GREEN}+ Password verified.${NC}"
+
+        if extract_p12_alias "$P12_FILE" "$P12_PASS"; then
+            echo -e "${GREEN}+ P12 alias (friendlyName): ${P12_ALIAS}${NC}"
+            echo -e "${YELLOW}! Make sure to write this alias down and keep it documented for future use.${NC}"
+        else
+            echo -e "${YELLOW}! No friendlyName/alias was found in this P12 file.${NC}"
+        fi
+
         break
     else
         echo -e "${RED}- Incorrect password.${NC}"
@@ -248,6 +281,7 @@ if [[ $UPLOAD_CODE -eq 0 ]]; then
 else
     echo -e "${RED}- Upload failed.${NC}"
     read -p "Press Enter to exit..."
+    echo -e "${NC}"
     exit 1
 fi
 
@@ -286,6 +320,12 @@ if [[ -z "$SSH_KEY" ]]; then
                 ;;
         esac
     fi
+fi
+
+if [[ -n "$P12_ALIAS" ]]; then
+    echo ""
+    echo -e "${CYAN}REMINDER: The alias (friendlyName) for this P12 is: ${P12_ALIAS}${NC}"
+    echo -e "${YELLOW}Please keep this alias documented somewhere safe for future use.${NC}"
 fi
 
 echo ""
