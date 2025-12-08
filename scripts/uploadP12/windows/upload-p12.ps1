@@ -471,4 +471,15 @@ if ($script:P12FriendlyName) {
 }
 
 Write-Host ""
+Write-Host "Login reminder:" -ForegroundColor $Cyan
+if ($sshKey) {
+    Write-Host "You can log into your server using this command:" -ForegroundColor $Cyan
+    Write-Host "ssh -i `"$sshKey`" $username@$server" -ForegroundColor $Green
+} else {
+    Write-Host "You can log into your server using this command:" -ForegroundColor $Cyan
+    Write-Host "ssh $username@$server" -ForegroundColor $Green
+}
+
+Write-Host ""
 Read-Host "Press Enter to exit..."
+
