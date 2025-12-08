@@ -39,9 +39,10 @@ Choose the `.p12` file you plan to upload to your server.
 
 The script checks that you know the correct password **before uploading anything**.
 
-* Password is verified locally
-* Password is never sent to the server
-* You get multiple attempts if needed
+* Password is verified locally  
+* Password is never sent to the server  
+* You get multiple attempts if needed  
+* After the password is verified, the script reads the `.p12` **alias (friendlyName)** and displays it so you can write it down and keep it documented
 
 ---
 
@@ -141,6 +142,7 @@ To install OpenSSH Client (if missing):
 * Incorrect server fingerprint → script fixes it automatically
 * SSH key won’t authenticate → script shows the reason and offers alternatives
 * PuTTY key detected → script auto-converts it
+* Forgot your `.p12` alias → the script prints the alias (friendlyName) right after password verification and reminds you again at the end, so you can write it down
 
 Most issues resolve themselves automatically.
 
