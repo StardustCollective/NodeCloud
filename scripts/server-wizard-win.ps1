@@ -123,9 +123,9 @@ function Invoke-Remote {
         [string]$Command
     )
 
-    $args = (Get-SshBase) + @("$User@$Host", $Command)
+    $args = (Get-SshBase) + @("$($User)@$($Host)", $Command)
     Write-Host ""
-    Write-Host "Running on $User@$Host:" -ForegroundColor $Gray
+    Write-Host "Running on $($User)@$($Host):" -ForegroundColor $Gray
     Write-Host "  $Command" -ForegroundColor $Gray
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
