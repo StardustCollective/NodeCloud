@@ -123,25 +123,24 @@ function Invoke-Remote {
         [string]$Command
     )
 
-    # Build ssh args safely
     $target = "$($User)@$($ServerHost)"
-    $args = (Get-SshBase) + @($target, $Command)
+    $args   = (Get-SshBase) + @($target, $Command)
 
     Write-Host ""
     Write-Host ("Running on {0}@{1}:" -f $User, $ServerHost) -ForegroundColor $Gray
     Write-Host "  $Command" -ForegroundColor $Gray
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $args[0]
-    $psi.Arguments = ($args[1..($args.Count-1)] -join " ")
+    $psi.FileName               = $args[0]
+    $psi.Arguments              = ($args[1..($args.Count-1)] -join " ")
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
+    $psi.UseShellExecute        = $false
+    $psi.CreateNoWindow         = $true
 
     $proc = New-Object System.Diagnostics.Process
     $proc.StartInfo = $psi
-    $null = $proc.Start()
+    $null   = $proc.Start()
     $stdout = $proc.StandardOutput.ReadToEnd()
     $stderr = $proc.StandardError.ReadToEnd()
     $proc.WaitForExit()
@@ -265,13 +264,13 @@ find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordin
         return
     }
 
-    $fileName = [System.IO.Path]::GetFileName($selected)
-    $remoteBackupDir = "~/p12-backups"
+    $fileName         = [System.IO.Path]::GetFileName($selected)
+    $remoteBackupDir  = "~/p12-backups"
     $remoteBackupPath = "$remoteBackupDir/$fileName"
 
     $backupCmd = "mkdir -p $remoteBackupDir && if [ -e '$remoteBackupPath' ]; then echo 'EXISTS'; else echo 'OK'; fi"
-    $status = Invoke-Remote -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $backupCmd
-    $status = $status.Trim()
+    $status   = Invoke-Remote -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $backupCmd
+    $status   = $status.Trim()
 
     if ($status -eq "EXISTS") {
         if (-not (Confirm-YesNo "Remote backup $remoteBackupPath already exists. Overwrite?" $false)) {
