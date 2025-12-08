@@ -124,20 +124,7 @@ All required tools come preinstalled on macOS.
 
 ---
 
-## 5️⃣ Troubleshooting (Short List)
-
-* Wrong `.p12` password → script asks again
-* Wrong SSH password → SSH prompts again
-* Incorrect server fingerprint → script fixes it automatically
-* SSH key fails → script shows cause and allows alternatives
-* Missing SSH tools → extremely rare on macOS; script will warn you
-* Forgot your `.p12` alias → the script prints the alias (friendlyName) right after password verification and reminds you again at the end, so you can write it down
-
-Most problems resolve automatically with no user action.
-
----
-
-## 6️⃣ Cleanup
+## 5️⃣ Cleanup
 
 * The optional one-liner downloads the script to your current folder
 * You can delete `upload-p12-mac.sh` at any time
