@@ -135,20 +135,7 @@ To install OpenSSH Client (if missing):
 
 ---
 
-## 5️⃣ Troubleshooting (Short List)
-
-* Wrong `.p12` password → script asks again
-* Wrong SSH password → SSH prompts again
-* Incorrect server fingerprint → script fixes it automatically
-* SSH key won’t authenticate → script shows the reason and offers alternatives
-* PuTTY key detected → script auto-converts it
-* Forgot your `.p12` alias → the script prints the alias (friendlyName) right after password verification and reminds you again at the end, so you can write it down
-
-Most issues resolve themselves automatically.
-
----
-
-## 6️⃣ Cleanup
+## 5️⃣ Cleanup
 
 * The one-liner **downloads the script temporarily**
 * The script **deletes itself** before exiting
