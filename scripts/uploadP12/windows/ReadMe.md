@@ -7,6 +7,7 @@ This tool guides you through securely uploading your `.p12` file to an Ubuntu se
 ## 1️⃣ Quick Start (Copy & Paste)
 
 Run this in **Command Prompt (CMD)**:
+
 DO NOT run this command inside of your Ubuntu server! It will fail to work.  It must be run in a fresh Windows Command Prompt.
 
 ```cmd
