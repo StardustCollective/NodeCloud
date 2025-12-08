@@ -135,7 +135,7 @@ function Get-ScpArgs {
     return $args
 }
 
-function Invoke-Remote {
+function Invoke-RemoteInteractive {
     param(
         [string]$User,
         [string]$ServerHost,
@@ -153,8 +153,31 @@ function Invoke-Remote {
 
     & ssh @sshArgs
     if ($LASTEXITCODE -ne 0) {
+        Write-Host "ssh exited with code $LASTEXITCODE. See output above for details." -ForegroundColor $Red
+    }
+}
+
+function Invoke-RemoteCapture {
+    param(
+        [string]$User,
+        [string]$ServerHost,
+        [string]$Command
+    )
+
+    $sshArgs = Get-SshArgs
+    $target  = "$($User)@$($ServerHost)"
+    $sshArgs += @($target, $Command)
+
+    Write-Host ""
+    Write-Host ("Running (capture) on {0}@{1}:" -f $User, $ServerHost) -ForegroundColor $Gray
+    Write-Host "  $Command" -ForegroundColor $Gray
+
+    $out = & ssh @sshArgs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host $out -ForegroundColor $Yellow
         throw "Remote command failed with exit code $LASTEXITCODE."
     }
+    return $out
 }
 
 function Run-CreateNonRootUser {
@@ -172,15 +195,10 @@ function Run-CreateNonRootUser {
     }
 
     $cmd = "rm -f create_sudo_user.sh && curl -fsSL -o create_sudo_user.sh https://github.com/StardustCollective/NodeCloud/raw/main/scripts/create_sudo_user.sh && sudo bash create_sudo_user.sh"
-    try {
-        Invoke-Remote -User $script:Config.NewServerUser -ServerHost $script:Config.NewServerHost -Command $cmd
-        Write-Host ""
-        Write-Host "create_sudo_user.sh completed. Reconnect as your new sudo user (e.g. nodeadmin) before continuing." -ForegroundColor $Green
-    } catch {
-        Write-Host ""
-        Write-Host "Failed to run create_sudo_user.sh:" -ForegroundColor $Red
-        Write-Host $_ -ForegroundColor $Red
-    }
+    Invoke-RemoteInteractive -User $script:Config.NewServerUser -ServerHost $script:Config.NewServerHost -Command $cmd
+
+    Write-Host ""
+    Write-Host "If you saw the create_sudo_user.sh prompts complete successfully, reconnect as your new sudo user (e.g. nodeadmin) before continuing." -ForegroundColor $Green
     Pause-AnyKey
 }
 
@@ -245,7 +263,7 @@ find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordin
 "@.Trim()
 
     try {
-        $output = Invoke-Remote -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $findCmd
+        $output = Invoke-RemoteCapture -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $findCmd
     } catch {
         Write-Host ""
         Write-Host "Failed to search for P12 files:" -ForegroundColor $Red
@@ -274,9 +292,17 @@ find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordin
     $remoteBackupPath = "$remoteBackupDir/$fileName"
 
     $backupCmd = "mkdir -p $remoteBackupDir && if [ -e '$remoteBackupPath' ]; then echo 'EXISTS'; else echo 'OK'; fi"
-    $status    = Invoke-Remote -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $backupCmd
-    $status    = $status.Trim()
+    try {
+        $status = Invoke-RemoteCapture -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $backupCmd
+    } catch {
+        Write-Host ""
+        Write-Host "Failed to prepare backup folder on old server:" -ForegroundColor $Red
+        Write-Host $_ -ForegroundColor $Red
+        Pause-AnyKey
+        return
+    }
 
+    $status = $status.Trim()
     if ($status -eq "EXISTS") {
         if (-not (Confirm-YesNo "Remote backup $remoteBackupPath already exists. Overwrite?" $false)) {
             Write-Host "Remote backup skipped." -ForegroundColor $Yellow
@@ -287,7 +313,7 @@ find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordin
 
     $copyCmd = "mkdir -p $remoteBackupDir && cp -f '$selected' '$remoteBackupPath'"
     try {
-        Invoke-Remote -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $copyCmd
+        Invoke-RemoteCapture -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $copyCmd | Out-Null
     } catch {
         Write-Host ""
         Write-Host "Failed to copy P12 into backup folder on old server:" -ForegroundColor $Red
@@ -318,9 +344,10 @@ find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordin
 
     Write-Host ""
     Write-Host "Downloading backup to: $localPath" -ForegroundColor $Cyan
-    & scp @scpArgs
+    $out = & scp @scpArgs 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "scp failed with exit code $LASTEXITCODE" -ForegroundColor $Red
+        Write-Host $out -ForegroundColor $Yellow
     } else {
         Write-Host "P12 backup downloaded to: $localPath" -ForegroundColor $Green
         $script:Config.LocalP12Path = $localPath
