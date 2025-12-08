@@ -10,6 +10,8 @@ $Green  = "Green"
 $Yellow = "Yellow"
 $Red    = "Red"
 
+$script:P12FriendlyName = $null
+
 Clear-Host
 Write-Host "==============================================================" -ForegroundColor $Cyan
 Write-Host "                    STARDUST COLLECTIVE" -ForegroundColor $Cyan
@@ -187,7 +189,17 @@ function Test-P12Password {
         try {
             $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
             $cert.Import($Path,$plain,'Exportable')
+
             Write-Host "+ Password verified." -ForegroundColor $Green
+
+            if (-not [string]::IsNullOrWhiteSpace($cert.FriendlyName)) {
+                $script:P12FriendlyName = $cert.FriendlyName
+                Write-Host "+ P12 alias (friendlyName): $script:P12FriendlyName" -ForegroundColor $Green
+                Write-Host "! Make sure to write this alias down and keep it documented for future use." -ForegroundColor $Yellow
+            } else {
+                Write-Host "! This P12 file does not contain a friendlyName/alias field." -ForegroundColor $Yellow
+            }
+
             return $secure
         } catch {
             Write-Host "- Incorrect password." -ForegroundColor $Red
@@ -450,6 +462,12 @@ if (-not $sshKey) {
             }
         }
     }
+}
+
+if ($script:P12FriendlyName) {
+    Write-Host ""
+    Write-Host "REMINDER: The alias (friendlyName) for this P12 is: $script:P12FriendlyName" -ForegroundColor $Cyan
+    Write-Host "Please keep this alias documented somewhere safe. You may need it later for tools or imports." -ForegroundColor $Yellow
 }
 
 Write-Host ""
