@@ -43,6 +43,7 @@ The script checks that the password is correct **before uploading anything**.
 * Password is verified locally using OpenSSL
 * Password is never sent to the server
 * You get up to 12 attempts
+* After the password is verified, the script reads the `.p12` **alias (friendlyName)** and displays it so you can write it down and keep it documented
 
 ---
 
@@ -130,6 +131,7 @@ All required tools come preinstalled on macOS.
 * Incorrect server fingerprint → script fixes it automatically
 * SSH key fails → script shows cause and allows alternatives
 * Missing SSH tools → extremely rare on macOS; script will warn you
+* Forgot your `.p12` alias → the script prints the alias (friendlyName) right after password verification and reminds you again at the end, so you can write it down
 
 Most problems resolve automatically with no user action.
 
