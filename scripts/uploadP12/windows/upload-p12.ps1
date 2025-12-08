@@ -60,6 +60,80 @@ function Ensure-SshTools {
     return $true
 }
 
+function Get-KnownHostsPath {
+    $userProfile = $env:USERPROFILE
+    if (-not $userProfile) {
+        $userProfile = $HOME
+    }
+
+    $sshDir = Join-Path $userProfile ".ssh"
+    if (-not (Test-Path -LiteralPath $sshDir)) {
+        New-Item -ItemType Directory -Path $sshDir -Force | Out-Null
+    }
+
+    return (Join-Path $sshDir "known_hosts")
+}
+
+function Clean-HostFromKnownHosts {
+    param(
+        [string]$Server
+    )
+
+    if (Get-Command ssh-keygen -ErrorAction SilentlyContinue) {
+        Write-Host "Cleaning host key for $Server from known_hosts..." -ForegroundColor Yellow
+        ssh-keygen -R $Server | Out-Null
+    }
+}
+
+function Invoke-ScpWithHostHandling {
+    param(
+        [string]$Username,
+        [string]$Server,
+        [string]$PrivateKeyPath,
+        [string]$LocalPath
+    )
+
+    $knownHosts = Get-KnownHostsPath
+    $remoteTarget = "$Username@$Server`:~/"
+
+    $args = @()
+
+    if ($PrivateKeyPath) {
+        $args += "-i"
+        $args += $PrivateKeyPath
+    }
+
+    $args += @(
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=$knownHosts",
+        $LocalPath,
+        $remoteTarget
+    )
+
+    $attempt = 1
+    while ($attempt -le 2) {
+        Write-Host "Running scp (attempt $attempt)..." -ForegroundColor Cyan
+        $scpOutput = & scp @args 2>&1
+        $code = $LASTEXITCODE
+
+        if ($code -eq 0) {
+            return 0
+        }
+
+        if ($attempt -eq 1 -and ($scpOutput -match "REMOTE HOST IDENTIFICATION HAS CHANGED" -or $scpOutput -match "Offending .*known_hosts")) {
+            Write-Host "Host key mismatch detected for $Server." -ForegroundColor Yellow
+            Clean-HostFromKnownHosts -Server $Server
+            $attempt++
+            continue
+        }
+
+        Write-Host $scpOutput -ForegroundColor DarkYellow
+        return $code
+    }
+
+    return $code
+}
+
 function Generate-NewSshKeyPair {
     param(
         [string]$Username,
@@ -161,11 +235,32 @@ function Install-PubKeyToServer {
 
     $remoteUserHost = "$Username@$Server"
     $remoteCmd = "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+    $knownHosts = Get-KnownHostsPath
 
     try {
-        Get-Content -LiteralPath $pubPath | ssh $remoteUserHost $remoteCmd
-        if ($LASTEXITCODE -ne 0) {
+        $pubContent = Get-Content -LiteralPath $pubPath -Raw
+        $sshArgs = @(
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=$knownHosts",
+            $remoteUserHost,
+            $remoteCmd
+        )
+
+        $sshOutput = $pubContent | & ssh @sshArgs 2>&1
+        $code = $LASTEXITCODE
+
+        if ($code -ne 0) {
+            if ($sshOutput -match "REMOTE HOST IDENTIFICATION HAS CHANGED" -or $sshOutput -match "Offending .*known_hosts") {
+                Write-Host "Host key mismatch detected while installing pubkey. Cleaning and retrying..." -ForegroundColor Yellow
+                Clean-HostFromKnownHosts -Server $Server
+                $sshOutput = $pubContent | & ssh @sshArgs 2>&1
+                $code = $LASTEXITCODE
+            }
+        }
+
+        if ($code -ne 0) {
             Write-Host "ssh command to install authorized key failed." -ForegroundColor Red
+            Write-Host $sshOutput -ForegroundColor DarkYellow
             Remove-Item -LiteralPath $pubPath -ErrorAction SilentlyContinue
             return $false
         }
@@ -185,8 +280,8 @@ function Test-P12Password {
         [string]$Path
     )
 
-    for ($i = 1; $i -le 3; $i++) {
-        $prompt = "Enter the password for this .p12 file (attempt $i of 3): "
+    for ($i = 1; $i -le 12; $i++) {
+        $prompt = "Enter the password for this .p12 file (attempt $i of 12): "
         $secure = Read-Host $prompt -AsSecureString
 
         $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
@@ -218,23 +313,45 @@ function Test-SshKeyAgainstServer {
         return $false
     }
 
-    Write-Host ""
-    Write-Host "We can now test this SSH key against the server." -ForegroundColor Cyan
-    Write-Host "You may be prompted for the SSH key passphrase by ssh itself." -ForegroundColor Yellow
-    Write-Host ""
-
+    $knownHosts = Get-KnownHostsPath
     $remoteUserHost = "$Username@$Server"
+    $args = @(
+        "-i", $PrivateKeyPath,
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=$knownHosts",
+        $remoteUserHost,
+        "echo 'SSH key test ok'"
+    )
 
-    & ssh -i "$PrivateKeyPath" "$remoteUserHost" "echo 'SSH key test ok'"
+    $attempt = 1
+    while ($attempt -le 2) {
+        Write-Host ""
+        Write-Host "Testing SSH key against the server (attempt $attempt)..." -ForegroundColor Cyan
+        Write-Host "You may be prompted for the SSH key passphrase by ssh itself." -ForegroundColor Yellow
+        Write-Host ""
 
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "SSH key successfully authenticated with the server." -ForegroundColor Green
-        return $true
-    } else {
-        Write-Host "SSH key authentication test failed (exit code $LASTEXITCODE)." -ForegroundColor Red
+        $output = & ssh @args 2>&1
+        $code = $LASTEXITCODE
+
+        if ($code -eq 0) {
+            Write-Host "SSH key successfully authenticated with the server." -ForegroundColor Green
+            return $true
+        }
+
+        if ($attempt -eq 1 -and ($output -match "REMOTE HOST IDENTIFICATION HAS CHANGED" -or $output -match "Offending .*known_hosts")) {
+            Write-Host "Host key mismatch detected for $Server during key test. Cleaning and retrying..." -ForegroundColor Yellow
+            Clean-HostFromKnownHosts -Server $Server
+            $attempt++
+            continue
+        }
+
+        Write-Host "SSH key authentication test failed (exit code $code)." -ForegroundColor Red
         Write-Host "Possible reasons: wrong passphrase, wrong user, or key not authorized." -ForegroundColor Yellow
+        Write-Host $output -ForegroundColor DarkYellow
         return $false
     }
+
+    return $false
 }
 
 Write-Host "This script will:" -ForegroundColor Cyan
@@ -242,6 +359,7 @@ Write-Host "  1) Let you select a .p12 file"
 Write-Host "  2) Verify you know the .p12 password before uploading"
 Write-Host "  3) Optionally let you select an SSH private key (defaulting to your .ssh folder)"
 Write-Host "  4) Upload the .p12 to your Ubuntu server user's HOME directory using scp"
+Write-Host "  5) Optionally set up and test SSH key-based login" 
 Write-Host ""
 
 $dialog = New-Object System.Windows.Forms.OpenFileDialog
@@ -295,8 +413,6 @@ if ([string]::IsNullOrWhiteSpace($server) -or [string]::IsNullOrWhiteSpace($user
     exit 1
 }
 
-$remoteTarget = "$username@$server`:~/"
-
 Write-Host ""
 Write-Host "Preparing to upload:"
 Write-Host "  Local .p12 file: $p12File"
@@ -310,13 +426,7 @@ if ($sshKey) {
 }
 Write-Host ""
 
-if ($sshKey) {
-    scp -i "$sshKey" "`"$p12File`"" "$remoteTarget"
-} else {
-    scp "`"$p12File`"" "$remoteTarget"
-}
-
-$uploadExit = $LASTEXITCODE
+$uploadExit = Invoke-ScpWithHostHandling -Username $username -Server $server -PrivateKeyPath $sshKey -LocalPath $p12File
 
 if ($uploadExit -eq 0) {
     Write-Host ""
