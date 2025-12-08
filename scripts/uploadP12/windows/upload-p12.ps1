@@ -374,6 +374,11 @@ if (-not $server) {
     exit
 }
 
+if (Get-Command ssh-keygen -ErrorAction SilentlyContinue) {
+    Write-Host "! Cleaning SSH host entry for $server" -ForegroundColor $Yellow
+    ssh-keygen -R $server | Out-Null
+}
+
 Write-Host ""
 Write-Host "STEP 4: Enter server username" -ForegroundColor $Cyan
 $username = Read-Host "Username"
