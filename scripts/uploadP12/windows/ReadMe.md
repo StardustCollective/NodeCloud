@@ -7,6 +7,7 @@ This tool guides you through securely uploading your `.p12` file to an Ubuntu se
 ## 1️⃣ Quick Start (Copy & Paste)
 
 Run this in **Command Prompt (CMD)**:
+DO NOT run this command inside of your Ubuntu server! It will fail to work.  It must be run in a fresh Windows Command Prompt.
 
 ```cmd
 powershell -NoProfile -Command "$s=\"$env:TEMP\upload-p12.ps1\"; iwr 'https://raw.githubusercontent.com/StardustCollective/NodeCloud/main/scripts/uploadP12/windows/upload-p12.ps1' -OutFile $s; powershell -NoProfile -ExecutionPolicy RemoteSigned -File $s; Remove-Item -LiteralPath $s -Force"
