@@ -8,6 +8,8 @@ This tool guides you through securely uploading your `.p12` file to an Ubuntu se
 
 Run this in **Terminal**:
 
+DO NOT run this command inside of your Ubuntu server! It will fail to work. It must be run in a fresh Terminal on your MacOS.
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/StardustCollective/NodeCloud/main/scripts/uploadP12/macos/upload-p12-mac.sh -o upload-p12-mac.sh \
   && chmod +x upload-p12-mac.sh \
