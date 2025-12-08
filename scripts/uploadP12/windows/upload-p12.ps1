@@ -404,9 +404,53 @@ if ($upload -eq 0) {
 if (-not $sshKey) {
     Write-Host ""
     Write-Host "STEP 7: Optional SSH key setup" -ForegroundColor $Cyan
+
     $do = Read-Host "Set up SSH key-based login now? [Y/n]"
-    if ([string]::IsNullOrWhiteSpace($do)) { $do="Y" }
+    if ([string]::IsNullOrWhiteSpace($do)) { $do = "Y" }
 
     if ($do -match "^[Yy]") {
+
         Write-Host ""
-        Write-Host "Choose an option:" -
+        Write-Host "Choose an option:" -ForegroundColor $Cyan
+        Write-Host "  1) Generate a NEW SSH key pair"
+        Write-Host "  2) Import an EXISTING SSH key"
+        Write-Host "  3) Skip SSH key setup"
+        Write-Host ""
+
+        $choice = Read-Host "Enter 1, 2, or 3"
+
+        switch ($choice) {
+
+            "1" {
+                if (-not (Ensure-SshTools)) { break }
+
+                $newKey = Generate-NewSshKeyPair -Username $username -Server $server
+
+                if ($newKey) {
+                    if (Install-PubKeyToServer -Username $username -Server $server -KeyPath $newKey) {
+                        Test-SshKeyAgainstServer -Username $username -Server $server -KeyPath $newKey | Out-Null
+                    }
+                }
+            }
+
+            "2" {
+                if (-not (Ensure-SshTools)) { break }
+
+                $import = Select-SshKeyFile -PromptTitle "Select existing SSH private key to import"
+
+                if ($import) {
+                    if (Install-PubKeyToServer -Username $username -Server $server -KeyPath $import) {
+                        Test-SshKeyAgainstServer -Username $username -Server $server -KeyPath $import | Out-Null
+                    }
+                }
+            }
+
+            default {
+                Write-Host "! SSH key setup skipped." -ForegroundColor $Yellow
+            }
+        }
+    }
+} 
+
+Write-Host ""
+Read-Host "Press Enter to exit..."
