@@ -16,6 +16,7 @@ $script:Config = @{
     OldServerUser = $null
     NewServerHost = $null
     NewServerUser = $null
+    UseSshKey     = $null
     SshKeyPath    = $null
     LocalP12Path  = $null
 }
@@ -94,8 +95,16 @@ function Ensure-ConfigField {
     }
 }
 
-function Ensure-SshKey {
-    if (-not $script:Config.SshKeyPath) {
+function Ensure-SshKeySelection {
+    if ($null -eq $script:Config.UseSshKey) {
+        if (Confirm-YesNo "Do you use an SSH private key file (pem/ppk) to connect to your servers?" $true) {
+            $script:Config.UseSshKey = $true
+        } else {
+            $script:Config.UseSshKey = $false
+        }
+    }
+
+    if ($script:Config.UseSshKey -and -not $script:Config.SshKeyPath) {
         Write-Host ""
         Write-Host "Select your SSH private key used to connect to your server." -ForegroundColor $Cyan
         $path = Choose-File -Title "Select SSH private key"
@@ -106,14 +115,24 @@ function Ensure-SshKey {
     }
 }
 
-function Get-SshBase {
-    Ensure-SshKey
-    return @("ssh", "-i", $script:Config.SshKeyPath, "-o", "StrictHostKeyChecking=no")
+function Get-SshArgs {
+    Ensure-SshKeySelection
+    $args = @()
+    if ($script:Config.UseSshKey) {
+        $args += @("-i", $script:Config.SshKeyPath)
+    }
+    $args += @("-o", "StrictHostKeyChecking=no")
+    return $args
 }
 
-function Get-ScpBase {
-    Ensure-SshKey
-    return @("scp", "-i", $script:Config.SshKeyPath, "-o", "StrictHostKeyChecking=no")
+function Get-ScpArgs {
+    Ensure-SshKeySelection
+    $args = @()
+    if ($script:Config.UseSshKey) {
+        $args += @("-i", $script:Config.SshKeyPath)
+    }
+    $args += @("-o", "StrictHostKeyChecking=no")
+    return $args
 }
 
 function Invoke-Remote {
@@ -123,33 +142,19 @@ function Invoke-Remote {
         [string]$Command
     )
 
-    $target = "$($User)@$($ServerHost)"
-    $args   = (Get-SshBase) + @($target, $Command)
+    $sshArgs = Get-SshArgs
+    $target  = "$($User)@$($ServerHost)"
+    $sshArgs += @($target, $Command)
 
     Write-Host ""
     Write-Host ("Running on {0}@{1}:" -f $User, $ServerHost) -ForegroundColor $Gray
     Write-Host "  $Command" -ForegroundColor $Gray
+    Write-Host ""
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName               = $args[0]
-    $psi.Arguments              = ($args[1..($args.Count-1)] -join " ")
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError  = $true
-    $psi.UseShellExecute        = $false
-    $psi.CreateNoWindow         = $true
-
-    $proc = New-Object System.Diagnostics.Process
-    $proc.StartInfo = $psi
-    $null   = $proc.Start()
-    $stdout = $proc.StandardOutput.ReadToEnd()
-    $stderr = $proc.StandardError.ReadToEnd()
-    $proc.WaitForExit()
-
-    if ($proc.ExitCode -ne 0) {
-        if ($stderr) { Write-Host $stderr -ForegroundColor $Red }
-        throw "Remote command failed with exit code $($proc.ExitCode)."
+    & ssh @sshArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Remote command failed with exit code $LASTEXITCODE."
     }
-    return $stdout
 }
 
 function Run-CreateNonRootUser {
@@ -168,7 +173,7 @@ function Run-CreateNonRootUser {
 
     $cmd = "rm -f create_sudo_user.sh && curl -fsSL -o create_sudo_user.sh https://github.com/StardustCollective/NodeCloud/raw/main/scripts/create_sudo_user.sh && sudo bash create_sudo_user.sh"
     try {
-        $null = Invoke-Remote -User $script:Config.NewServerUser -ServerHost $script:Config.NewServerHost -Command $cmd
+        Invoke-Remote -User $script:Config.NewServerUser -ServerHost $script:Config.NewServerHost -Command $cmd
         Write-Host ""
         Write-Host "create_sudo_user.sh completed. Reconnect as your new sudo user (e.g. nodeadmin) before continuing." -ForegroundColor $Green
     } catch {
@@ -269,8 +274,8 @@ find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordin
     $remoteBackupPath = "$remoteBackupDir/$fileName"
 
     $backupCmd = "mkdir -p $remoteBackupDir && if [ -e '$remoteBackupPath' ]; then echo 'EXISTS'; else echo 'OK'; fi"
-    $status   = Invoke-Remote -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $backupCmd
-    $status   = $status.Trim()
+    $status    = Invoke-Remote -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $backupCmd
+    $status    = $status.Trim()
 
     if ($status -eq "EXISTS") {
         if (-not (Confirm-YesNo "Remote backup $remoteBackupPath already exists. Overwrite?" $false)) {
@@ -282,7 +287,7 @@ find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordin
 
     $copyCmd = "mkdir -p $remoteBackupDir && cp -f '$selected' '$remoteBackupPath'"
     try {
-        $null = Invoke-Remote -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $copyCmd
+        Invoke-Remote -User $script:Config.OldServerUser -ServerHost $script:Config.OldServerHost -Command $copyCmd
     } catch {
         Write-Host ""
         Write-Host "Failed to copy P12 into backup folder on old server:" -ForegroundColor $Red
@@ -308,12 +313,12 @@ find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordin
         }
     }
 
-    $scpBase = Get-ScpBase
+    $scpBase = Get-ScpArgs
     $scpArgs = $scpBase + @("$($script:Config.OldServerUser)@$($script:Config.OldServerHost):p12-backups/$fileName", $localPath)
 
     Write-Host ""
     Write-Host "Downloading backup to: $localPath" -ForegroundColor $Cyan
-    & $scpArgs[0] $scpArgs[1..($scpArgs.Count-1)]
+    & scp @scpArgs
     if ($LASTEXITCODE -ne 0) {
         Write-Host "scp failed with exit code $LASTEXITCODE" -ForegroundColor $Red
     } else {
