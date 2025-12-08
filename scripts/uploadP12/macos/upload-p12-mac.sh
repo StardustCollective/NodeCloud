@@ -329,5 +329,15 @@ if [[ -n "$P12_ALIAS" ]]; then
 fi
 
 echo ""
+echo -e "${CYAN}Login reminder:${NC}"
+echo -e "${CYAN}You can log into your server using this command:${NC}"
+
+if [[ -n "$SSH_KEY" ]]; then
+    echo -e "${GREEN}ssh -i \"$SSH_KEY\" ${USERNAME}@${SERVER}${NC}"
+else
+    echo -e "${GREEN}ssh ${USERNAME}@${SERVER}${NC}"
+fi
+
+echo ""
 read -p "Press Enter to exit..."
 echo -e "${NC}"
