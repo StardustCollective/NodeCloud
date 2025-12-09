@@ -255,6 +255,7 @@ function Select-ProfileFromDisk([string]$Purpose) {
 }
 
 function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
+    # Reuse cached connection if available
     if ($CachedConn.Value) {
         $c = $CachedConn.Value
         if (Confirm "Reuse $Purpose connection: $($c.User)@$($c.Host):$($c.Port)?") {
@@ -262,6 +263,7 @@ function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
         }
     }
 
+    # Offer stored profiles
     $useStored = $false
     if (Get-StoredProfiles) {
         $useStored = Confirm "Load a stored connection profile for $Purpose?"
@@ -275,6 +277,7 @@ function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
         }
     }
 
+    # Manual entry
     Show-Banner
     Write-Host "$Purpose - manual connection entry"
     $serverHost = Read-Text "Server IP or Hostname"
@@ -295,22 +298,6 @@ function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
         Port         = $port
         IdentityFile = $ident
     }
-
-    if (Confirm "Save this connection as a profile?") {
-        $pname = Read-Text "Profile name (letters, numbers, dashes only)"
-        if (-not (Test-ProfileNameValid $pname)) {
-            Write-Err "Invalid profile name. Not saving."
-        } else {
-            $conn.Name = $pname
-            Save-SSHProfile $conn
-        }
-    }
-
-    $CachedConn.Value = $conn
-    return $conn
-    }
-
-    if ($ident) { $Script:LastIdentityPath = $ident }
 
     if (Confirm "Save this connection as a profile?") {
         $pname = Read-Text "Profile name (letters, numbers, dashes only)"
