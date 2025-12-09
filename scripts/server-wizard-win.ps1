@@ -99,23 +99,18 @@ function Ensure-ConfigField {
 }
 
 function Ensure-SshTools {
-    if (-not $script:SshExe -or -not $script:ScpExe) {
-        $ssh = Get-Command ssh -ErrorAction SilentlyContinue
-        $scp = Get-Command scp -ErrorAction SilentlyContinue
+    $ssh = Get-Command ssh -ErrorAction SilentlyContinue
+    $scp = Get-Command scp -ErrorAction SilentlyContinue
 
-        if (-not $ssh -or -not $scp) {
-            Show-Banner
-            Write-Host "ERROR: ssh/scp client not found in PATH." -ForegroundColor $Red
-            Write-Host ""
-            Write-Host "Make sure OpenSSH Client is installed on Windows and 'ssh' / 'scp' work in PowerShell." -ForegroundColor $Cyan
-            Write-Host "After installing, open a NEW PowerShell window and run this wizard again." -ForegroundColor $Cyan
-            Write-Host ""
-            Read-Host "Press Enter to exit..."
-            exit 1
-        }
-
-        $script:SshExe = $ssh.Source
-        $script:ScpExe = $scp.Source
+    if (-not $ssh -or -not $scp) {
+        Show-Banner
+        Write-Host "ERROR: ssh/scp client not found in PATH." -ForegroundColor $Red
+        Write-Host ""
+        Write-Host "Make sure OpenSSH Client is installed on Windows and 'ssh' / 'scp' work in PowerShell." -ForegroundColor $Cyan
+        Write-Host "After installing, open a NEW PowerShell window and run this wizard again." -ForegroundColor $Cyan
+        Write-Host ""
+        Read-Host "Press Enter to exit..."
+        exit 1
     }
 }
 
@@ -207,7 +202,7 @@ function Invoke-RemoteInteractive {
     Write-Host "       $debugCmd" -ForegroundColor $Yellow
     Write-Host ""
 
-    & $script:SshExe @sshArgs
+    & ssh @sshArgs
 }
 
 function Invoke-RemoteCapture {
@@ -238,7 +233,7 @@ function Invoke-RemoteCapture {
     Write-Host "       $debugCmd" -ForegroundColor $Yellow
     Write-Host ""
 
-    $out = & $script:SshExe @sshArgs 2>&1
+    $out = & ssh @sshArgs 2>&1
     $code = $LASTEXITCODE
     if ($code -ne 0) {
         Write-Host $out -ForegroundColor $Yellow
@@ -411,7 +406,7 @@ find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordin
 
     Write-Host ""
     Write-Host "Downloading backup to: $localPath" -ForegroundColor $Cyan
-    $out = & $script:ScpExe @scpArgs 2>&1
+    $out = & scp @scpArgs 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "scp failed with exit code $LASTEXITCODE" -ForegroundColor $Red
         Write-Host $out -ForegroundColor $Yellow
