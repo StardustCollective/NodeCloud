@@ -277,9 +277,9 @@ function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
 
     Show-Banner
     Write-Host "$Purpose - manual connection entry"
-    $host = Read-Text "Server IP or Hostname"
-    $user = Read-Text "SSH Username"
-    $port = Read-Text "SSH Port (default 22)"
+    $serverHost = Read-Text "Server IP or Hostname"
+    $user       = Read-Text "SSH Username"
+    $port       = Read-Text "SSH Port (default 22)"
     if (-not $port) { $port = "22" }
 
     $identPrompt = "Path to SSH private key (blank for password auth)"
@@ -287,7 +287,7 @@ function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
 
     $conn = [pscustomobject]@{
         Name         = ""
-        Host         = $host
+        Host         = $serverHost
         User         = $user
         Port         = $port
         IdentityFile = $ident
@@ -444,15 +444,15 @@ function Run-ExportSSHProfile {
         Pause
         return
     }
-    $host = Read-Text "Server IP or Hostname"
-    $user = Read-Text "SSH Username"
-    $port = Read-Text "SSH Port (default 22)"
+    $serverHost = Read-Text "Server IP or Hostname"
+    $user       = Read-Text "SSH Username"
+    $port       = Read-Text "SSH Port (default 22)"
     if (-not $port) { $port = "22" }
-    $ident = Read-Text "Path to SSH private key (blank for password auth)"
+    $ident      = Read-Text "Path to SSH private key (blank for password auth)"
 
     $profile = [pscustomobject]@{
         Name         = $name
-        Host         = $host
+        Host         = $serverHost
         User         = $user
         Port         = $port
         IdentityFile = $ident
@@ -837,15 +837,15 @@ echo "Root SSH login disabled, root password locked, sshd restarted."
 
     # 5) Export profile for the new user and offer to launch
     if (Confirm "Export SSH connection profile for new user '$newUser'?") {
-        $host = $conn.Host
-        $port = $conn.Port
-        $ident = $conn.IdentityFile
+        $serverHost = $conn.Host
+        $port       = $conn.Port
+        $ident      = $conn.IdentityFile
         $profileName = Read-Text "Profile name for this new user (default: $newUser)"
         if (-not $profileName) { $profileName = $newUser }
 
         $profile = [pscustomobject]@{
             Name         = $profileName
-            Host         = $host
+            Host         = $serverHost
             User         = $newUser
             Port         = $port
             IdentityFile = $ident
@@ -854,23 +854,21 @@ echo "Root SSH login disabled, root password locked, sshd restarted."
         Save-SSHProfile $profile
 
         if (Confirm "Launch SSH for this new profile in a new window now?") {
-            # Reuse Run-ServerLogin logic but with our temporary profile
             if (Get-Command wt.exe -ErrorAction SilentlyContinue) {
                 $argsList = @("new-window", "ssh")
                 if ($ident) { $argsList += @("-i", $ident) }
-                $argsList += @("-p", $port, ("{0}@{1}" -f $newUser, $host))
+                $argsList += @("-p", $port, ("{0}@{1}" -f $newUser, $serverHost))
                 Start-Process wt.exe -ArgumentList $argsList
             } else {
                 $cmdPieces = @("ssh")
                 if ($ident) { $cmdPieces += @("-i", $ident) }
-                $cmdPieces += @("-p", $port, ("{0}@{1}" -f $newUser, $host))
+                $cmdPieces += @("-p", $port, ("{0}@{1}" -f $newUser, $serverHost))
                 $cmdString = $cmdPieces -join " "
                 Start-Process "powershell.exe" -ArgumentList "-NoExit", "-Command", $cmdString
             }
             Write-Ok "SSH session launched for $newUser."
         }
     }
-
     Pause
 }
 
