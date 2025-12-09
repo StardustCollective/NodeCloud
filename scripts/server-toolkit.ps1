@@ -286,7 +286,7 @@ function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
     if (-not $port) { $port = "22" }
 
     $ident = ""
-    if (Confirm "Use SSH private key file for this connection?") {
+    if (Confirm "Use SSH private key file for this connection?" $false) {
         $ident = Select-SSHKeyFile
         if ($ident) { $Script:LastIdentityPath = $ident }
     }
@@ -670,12 +670,8 @@ function Run-NewServerSetup {
     }
 
     # 1) Ask for new user credentials
-    $newUser = Read-Text "Enter new username (e.g. nodeadmin)"
-    if (-not $newUser) {
-        Write-Err "Username cannot be empty."
-        Pause
-        return
-    }
+    $newUser = Read-Text "Enter new username (default: nodeadmin)"
+    if (-not $newUser) { $newUser = "nodeadmin" }
 
     $pw1 = Read-PasswordText "Enter password for $newUser"
     $pw2 = Read-PasswordText "Confirm password"
@@ -718,12 +714,12 @@ elif [ -n "\$SUDO_USER" ] && [ -f "/home/\$SUDO_USER/.ssh/authorized_keys" ]; th
 fi
 
 if [ -n "\$SRC_KEYS" ]; then
-  HOME_DIR=\$(eval echo "~\$NEWUSER")
-  mkdir -p "\$HOME_DIR/.ssh"
-  cp "\$SRC_KEYS" "\$HOME_DIR/.ssh/authorized_keys"
+  HOME_DIR="/home/`$NEWUSER"
+  mkdir -p "$HOME_DIR/.ssh"
+  cp "$SRC_KEYS" "$HOME_DIR/.ssh/authorized_keys"
   chown -R "`$NEWUSER:`$NEWUSER" "$HOME_DIR/.ssh"
-  chmod 700 "\$HOME_DIR/.ssh"
-  chmod 600 "\$HOME_DIR/.ssh/authorized_keys"
+  chmod 700 "$HOME_DIR/.ssh"
+  chmod 600 "$HOME_DIR/.ssh/authorized_keys"
 fi
 
 echo "User \$NEWUSER created and configured."
@@ -814,7 +810,6 @@ fi
 
 # Remove any existing 'Match User root' block at end (simple approach)
 if grep -qi '^[[:space:]]*Match[[:space:]]\+User[[:space:]]\+root' "\$SSHD_CFG"; then
-  # Delete from Match User root to EOF and re-add below
   awk '
   BEGIN{del=0}
   /^Match[[:space:]]+User[[:space:]]+root/{del=1}
@@ -846,7 +841,7 @@ else
 fi
 
 passwd -l root >/dev/null 2>&1 || true
-if [ -f /root/.ssh/authorized_keys ]; then
+if [ -f "/root/.ssh/authorized_keys" ]; then
   mv /root/.ssh/authorized_keys /root/.ssh/authorized_keys.disabled 2>/dev/null || true
 fi
 
@@ -885,9 +880,9 @@ echo "Root SSH login disabled, root password locked, sshd restarted."
 
     # 5) Export profile for the new user and offer to launch
     if (Confirm "Export SSH connection profile for new user '$newUser'?") {
-        $serverHost = $conn.Host
-        $port       = $conn.Port
-        $ident      = $conn.IdentityFile
+        $serverHost  = $conn.Host
+        $port        = $conn.Port
+        $ident       = $conn.IdentityFile
         $profileName = Read-Text "Profile name for this new user (default: $newUser)"
         if (-not $profileName) { $profileName = $newUser }
 
@@ -928,12 +923,9 @@ function Run-CreateNonRootUser {
     Show-Banner
     Write-Host "Remote Non-Root User Creation"
     Write-Host
-    $newUser = Read-Text "Enter new username (e.g. nodeadmin)"
-    if (-not $newUser) {
-        Write-Err "Username cannot be empty."
-        Pause
-        return
-    }
+    $newUser = Read-Text "Enter new username (default: nodeadmin)"
+    if (-not $newUser) { $newUser = "nodeadmin" }
+
     $pw1 = Read-PasswordText "Enter password for $newUser"
     $pw2 = Read-PasswordText "Confirm password"
     if ($pw1 -ne $pw2) {
@@ -981,12 +973,12 @@ elif [ -n "\$SUDO_USER" ] && [ -f "/home/\$SUDO_USER/.ssh/authorized_keys" ]; th
 fi
 
 if [ -n "\$SRC_KEYS" ]; then
-  HOME_DIR=\$(eval echo "~\$NEWUSER")
-  mkdir -p "\$HOME_DIR/.ssh"
-  cp "\$SRC_KEYS" "\$HOME_DIR/.ssh/authorized_keys"
+  HOME_DIR="/home/`$NEWUSER"
+  mkdir -p "$HOME_DIR/.ssh"
+  cp "$SRC_KEYS" "$HOME_DIR/.ssh/authorized_keys"
   chown -R "`$NEWUSER:`$NEWUSER" "$HOME_DIR/.ssh"
-  chmod 700 "\$HOME_DIR/.ssh"
-  chmod 600 "\$HOME_DIR/.ssh/authorized_keys"
+  chmod 700 "$HOME_DIR/.ssh"
+  chmod 600 "$HOME_DIR/.ssh/authorized_keys"
 fi
 
 echo "User \$NEWUSER created and configured."
