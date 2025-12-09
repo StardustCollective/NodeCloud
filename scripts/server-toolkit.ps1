@@ -255,29 +255,27 @@ function Select-ProfileFromDisk([string]$Purpose) {
 }
 
 function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
-    # Reuse cached connection if available
+    # 1) Reuse cached connection if available
     if ($CachedConn.Value) {
         $c = $CachedConn.Value
-        if (Confirm "Reuse $Purpose connection: $($c.User)@$($c.Host):$($c.Port)?") {
+        if (Confirm "Reuse $Purpose connection: $($c.User)@$($c.Host):$($c.Port)?" $false) {
             return $c
         }
     }
 
-    # Offer stored profiles
-    $useStored = $false
-    if (Get-StoredProfiles) {
-        $useStored = Confirm "Load a stored connection profile for $Purpose?"
-    }
-
-    if ($useStored) {
-        $p = Select-ProfileFromDisk "$Purpose"
-        if ($p) {
-            $CachedConn.Value = $p
-            return $p
+    # 2) Load stored profiles (if any)
+    $profiles = Get-StoredProfiles
+    if ($profiles -and $profiles.Count -gt 0) {
+        if (Confirm "Load a stored connection profile for $Purpose?" $false) {
+            $p = Select-ProfileFromDisk "$Purpose"
+            if ($p) {
+                $CachedConn.Value = $p
+                return $p
+            }
         }
     }
 
-    # Manual entry
+    # 3) Manual entry
     Show-Banner
     Write-Host "$Purpose - manual connection entry"
     $serverHost = Read-Text "Server IP or Hostname"
@@ -663,13 +661,17 @@ function Run-NewServerSetup {
     Show-Banner
     Write-Host "New Server Setup"
     Write-Host
-    Write-Host "This will:"
+    Write-Host "This step can:"
     Write-Host "  - Create a new non-root sudo user on the remote Linux server"
     Write-Host "  - Copy SSH authorized_keys from root or SUDO_USER if available"
     Write-Host "  - Test SSH login as the new user"
     Write-Host "  - Optionally harden sshd to disable root SSH and lock root password"
     Write-Host
-    if (-not (Confirm "Continue with New Server Setup?" $false)) {
+
+    # Ask if we should create a non-root user at all
+    if (-not (Confirm "Create a new non-root sudo user now? (recommended)" $false)) {
+        Write-Warn "Skipping non-root user creation. Root SSH login will remain enabled."
+        Pause
         return
     }
 
@@ -697,9 +699,9 @@ if id "\$NEWUSER" >/dev/null 2>&1; then
 fi
 
 if command -v useradd >/dev/null 2>&1; then
-  useradd -m -s /bin/bash "$NEWUSER"
+  useradd -m -s /bin/bash "$NEWUSER" || echo "useradd returned non-zero (possibly user already exists). Continuing..."
 elif command -v adduser >/dev/null 2>&1; then
-  adduser --disabled-password --gecos "" "$NEWUSER"
+  adduser --disabled-password --gecos "" "$NEWUSER" || echo "adduser returned non-zero (possibly user already exists). Continuing..."
 else
   echo "Neither useradd nor adduser is available on this system."
   exit 1
@@ -758,19 +760,20 @@ echo "User \$NEWUSER created and configured."
         $err = $proc.StandardError.ReadToEnd()
         $proc.WaitForExit()
 
-        if ($out) { Write-Host $out }
-        if ($err) { Write-Host $err }
-
         if ($proc.ExitCode -eq 0) {
+            if ($out) { Write-Host $out }
+            if ($err) { Write-Host $err }
             $success = $true
         }
         elseif ($err -like "*REMOTE HOST IDENTIFICATION HAS CHANGED!*" -and $attempt -lt $maxRetries) {
-            Write-Warn "Host key mismatch detected for $hostName during user creation. Cleaning known_hosts and retrying..."
+            Write-Warn "Host key mismatch detected for $hostName. Cleaning known_hosts and retrying..."
             & ssh-keygen -R $hostName | Out-Null
             $attempt++
             continue
         }
         else {
+            if ($out) { Write-Host $out }
+            if ($err) { Write-Host $err }
             Write-Err "Remote user creation script failed (exit $($proc.ExitCode))."
             Pause
             return
@@ -976,9 +979,9 @@ if id "\$NEWUSER" >/dev/null 2>&1; then
 fi
 
 if command -v useradd >/dev/null 2>&1; then
-  useradd -m -s /bin/bash "$NEWUSER"
+  useradd -m -s /bin/bash "$NEWUSER" || echo "useradd returned non-zero (possibly user already exists). Continuing..."
 elif command -v adduser >/dev/null 2>&1; then
-  adduser --disabled-password --gecos "" "$NEWUSER"
+  adduser --disabled-password --gecos "" "$NEWUSER" || echo "adduser returned non-zero (possibly user already exists). Continuing..."
 else
   echo "Neither useradd nor adduser is available on this system."
   exit 1
