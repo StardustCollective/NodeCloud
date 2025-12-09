@@ -199,21 +199,21 @@ function Get-StoredProfiles {
     if (-not $files) { return @() }
     $profiles = @()
     foreach ($f in $files) {
-        $content = Get-Content $f -ErrorAction SilentlyContinue
-        $hostLine = $content | Where-Object { $_ -match '^\s*Host\s+' } | Select-Object -First 1
-        $hostNameLine = $content | Where-Object { $_ -match '^\s*HostName\s+' } | Select-Object -First 1
-        $userLine = $content | Where-Object { $_ -match '^\s*User\s+' } | Select-Object -First 1
-        $portLine = $content | Where-Object { $_ -match '^\s*Port\s+' } | Select-Object -First 1
-        $identLine = $content | Where-Object { $_ -match '^\s*IdentityFile\s+' } | Select-Object -First 1
+        $content      = Get-Content $f -ErrorAction SilentlyContinue
+        $hostLine     = $content | Where-Object { $_ -match '^\s*Host\s+' }      | Select-Object -First 1
+        $hostNameLine = $content | Where-Object { $_ -match '^\s*HostName\s+' }  | Select-Object -First 1
+        $userLine     = $content | Where-Object { $_ -match '^\s*User\s+' }      | Select-Object -First 1
+        $portLine     = $content | Where-Object { $_ -match '^\s*Port\s+' }      | Select-Object -First 1
+        $identLine    = $content | Where-Object { $_ -match '^\s*IdentityFile\s+' } | Select-Object -First 1
 
         if (-not $hostLine -or -not $hostNameLine -or -not $userLine) { continue }
 
         $p = [pscustomobject]@{
-            Name         = ($hostLine -replace '^\s*Host\s+', '').Trim()
+            Name         = ($hostLine     -replace '^\s*Host\s+', '').Trim()
             Host         = ($hostNameLine -replace '^\s*HostName\s+', '').Trim()
-            User         = ($userLine -replace '^\s*User\s+', '').Trim()
-            Port         = if ($portLine) { ($portLine -replace '^\s*Port\s+', '').Trim() } else { "22" }
-            IdentityFile = if ($identLine) { ($identLine -replace '^\s*IdentityFile\s+', '').Trim() } else { "" }
+            User         = ($userLine     -replace '^\s*User\s+', '').Trim()
+            Port         = if ($portLine)  { ($portLine  -replace '^\s*Port\s+', '').Trim() }        else { "22" }
+            IdentityFile = if ($identLine) { ($identLine -replace '^\s*IdentityFile\s+', '').Trim() } else { ""  }
         }
         $profiles += $p
     }
@@ -247,9 +247,9 @@ function Select-ProfileFromDisk([string]$Purpose) {
         if ($key.VirtualKeyCode -eq 27) { return $null } # Esc
 
         switch ($key.VirtualKeyCode) {
-            38 { if ($index -gt 0) { $index-- } }
-            40 { if ($index -lt $profiles.Count - 1) { $index++ } }
-            13 { return $profiles[$index] }
+            38 { if ($index -gt 0)                 { $index-- } }             # Up
+            40 { if ($index -lt $profiles.Count-1) { $index++ } }             # Down
+            13 { return $profiles[$index] }                                    # Enter
         }
     }
 }
