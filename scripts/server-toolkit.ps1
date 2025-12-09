@@ -665,7 +665,7 @@ function Run-NewServerSetup {
     Write-Host "  - Test SSH login as the new user"
     Write-Host "  - Optionally harden sshd to disable root SSH and lock root password"
     Write-Host
-    if (-not (Confirm "Continue with New Server Setup?")) {
+    if (-not (Confirm "Continue with New Server Setup?" $false)) {
         return
     }
 
@@ -692,10 +692,13 @@ if id "\$NEWUSER" >/dev/null 2>&1; then
   exit 0
 fi
 
-if command -v adduser >/dev/null 2>&1; then
-  adduser --disabled-password --gecos "" "\$NEWUSER"
+if command -v useradd >/dev/null 2>&1; then
+  useradd -m -s /bin/bash "$NEWUSER"
+elif command -v adduser >/dev/null 2>&1; then
+  adduser --disabled-password --gecos "" "$NEWUSER"
 else
-  useradd -m -s /bin/bash "\$NEWUSER"
+  echo "Neither useradd nor adduser is available on this system."
+  exit 1
 fi
 
 echo "`$NEWUSER:$pw1" | chpasswd
@@ -951,10 +954,13 @@ if id "\$NEWUSER" >/dev/null 2>&1; then
   exit 0
 fi
 
-if command -v adduser >/dev/null 2>&1; then
-  adduser --disabled-password --gecos "" "\$NEWUSER"
+if command -v useradd >/dev/null 2>&1; then
+  useradd -m -s /bin/bash "$NEWUSER"
+elif command -v adduser >/dev/null 2>&1; then
+  adduser --disabled-password --gecos "" "$NEWUSER"
 else
-  useradd -m -s /bin/bash "\$NEWUSER"
+  echo "Neither useradd nor adduser is available on this system."
+  exit 1
 fi
 
 echo "`$NEWUSER:$pw1" | chpasswd
