@@ -50,15 +50,16 @@ function Show-Banner {
 }
 
 function Read-Text([string]$Prompt) {
-    Write-Host "$Prompt: " -NoNewline
+    Write-Host ("{0}: " -f $Prompt) -NoNewline
     Read-Host
 }
 
 function Read-TextWithDefault([string]$Prompt, [string]$Default) {
     if ($Default) {
-        Write-Host "$Prompt [$Default]: " -NoNewline
-    } else
-        { Write-Host "$Prompt: " -NoNewline }
+        Write-Host ("{0} [{1}]: " -f $Prompt, $Default) -NoNewline
+    } else {
+        Write-Host ("{0}: " -f $Prompt) -NoNewline
+    }
     $resp = Read-Host
     if ([string]::IsNullOrWhiteSpace($resp)) {
         return $Default
@@ -67,7 +68,7 @@ function Read-TextWithDefault([string]$Prompt, [string]$Default) {
 }
 
 function Read-PasswordText([string]$Prompt) {
-    Write-Host "$Prompt: " -NoNewline
+    Write-Host ("{0}: " -f $Prompt) -NoNewline
     $sec = Read-Host -AsSecureString
     if (-not $sec) { return "" }
     return [Runtime.InteropServices.Marshal]::PtrToStringUni(
@@ -653,7 +654,7 @@ else
   useradd -m -s /bin/bash "\$NEWUSER"
 fi
 
-echo "\$NEWUSER:$pw1" | chpasswd
+echo "`$NEWUSER:$pw1" | chpasswd
 
 if getent group sudo >/dev/null 2>&1; then
   usermod -aG sudo "\$NEWUSER"
@@ -672,7 +673,7 @@ if [ -n "\$SRC_KEYS" ]; then
   HOME_DIR=\$(eval echo "~\$NEWUSER")
   mkdir -p "\$HOME_DIR/.ssh"
   cp "\$SRC_KEYS" "\$HOME_DIR/.ssh/authorized_keys"
-  chown -R "\$NEWUSER:\$NEWUSER" "\$HOME_DIR/.ssh"
+  chown -R "`$NEWUSER:`$NEWUSER" "$HOME_DIR/.ssh"
   chmod 700 "\$HOME_DIR/.ssh"
   chmod 600 "\$HOME_DIR/.ssh/authorized_keys"
 fi
@@ -918,7 +919,7 @@ else
   useradd -m -s /bin/bash "\$NEWUSER"
 fi
 
-echo "\$NEWUSER:$pw1" | chpasswd
+echo "`$NEWUSER:$pw1" | chpasswd
 
 if getent group sudo >/dev/null 2>&1; then
   usermod -aG sudo "\$NEWUSER"
@@ -937,7 +938,7 @@ if [ -n "\$SRC_KEYS" ]; then
   HOME_DIR=\$(eval echo "~\$NEWUSER")
   mkdir -p "\$HOME_DIR/.ssh"
   cp "\$SRC_KEYS" "\$HOME_DIR/.ssh/authorized_keys"
-  chown -R "\$NEWUSER:\$NEWUSER" "\$HOME_DIR/.ssh"
+  chown -R "`$NEWUSER:`$NEWUSER" "$HOME_DIR/.ssh"
   chmod 700 "\$HOME_DIR/.ssh"
   chmod 600 "\$HOME_DIR/.ssh/authorized_keys"
 fi
