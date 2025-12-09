@@ -182,7 +182,7 @@ function Get-ScpArgs {
     return $args
 }
 
-function Invoke-RemoteInteractive {
+function Invoke-RemoteCapture {
     param(
         [string]$User,
         [string]$ServerHost,
@@ -194,7 +194,7 @@ function Invoke-RemoteInteractive {
     $sshArgs += @($target, $Command)
 
     Write-Host ""
-    Write-Host ("Running on {0}@{1}:" -f $User, $ServerHost) -ForegroundColor $Gray
+    Write-Host ("Running (capture) on {0}@{1}:" -f $User, $ServerHost) -ForegroundColor $Gray
     Write-Host "  $Command" -ForegroundColor $Gray
 
     $debugCmd = "ssh " + ($sshArgs | ForEach-Object {
@@ -206,11 +206,20 @@ function Invoke-RemoteInteractive {
     }) -join " "
 
     Write-Host ""
-    Write-Host "DEBUG: ssh command being executed (copy/paste this to test):" -ForegroundColor $Yellow
+    Write-Host "DEBUG (capture): ssh command being executed:" -ForegroundColor $Yellow
     Write-Host "       $debugCmd" -ForegroundColor $Yellow
     Write-Host ""
 
-    & (Get-RealSshExe) @sshArgs
+    $sshExe = Get-RealSshExe
+
+    $tmp = [System.IO.Path]::GetTempFileName()
+
+    Start-Process -FilePath $sshExe -ArgumentList $sshArgs -RedirectStandardOutput $tmp -RedirectStandardError $tmp -WindowStyle Hidden -Wait
+
+    $output = Get-Content $tmp -ErrorAction SilentlyContinue
+    Remove-Item $tmp -ErrorAction SilentlyContinue
+
+    return ($output -join "`n")
 }
 
 function Invoke-RemoteCapture {
