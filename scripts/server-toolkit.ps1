@@ -282,8 +282,11 @@ function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
     $port       = Read-Text "SSH Port (default 22)"
     if (-not $port) { $port = "22" }
 
-    $identPrompt = "Path to SSH private key (blank for password auth)"
-    $ident = Read-TextWithDefault $identPrompt $Script:LastIdentityPath
+    $ident = ""
+    if (Confirm "Use SSH private key file for this connection?") {
+        $ident = Select-SSHKeyFile
+        if ($ident) { $Script:LastIdentityPath = $ident }
+    }
 
     $conn = [pscustomobject]@{
         Name         = ""
@@ -291,6 +294,20 @@ function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
         User         = $user
         Port         = $port
         IdentityFile = $ident
+    }
+
+    if (Confirm "Save this connection as a profile?") {
+        $pname = Read-Text "Profile name (letters, numbers, dashes only)"
+        if (-not (Test-ProfileNameValid $pname)) {
+            Write-Err "Invalid profile name. Not saving."
+        } else {
+            $conn.Name = $pname
+            Save-SSHProfile $conn
+        }
+    }
+
+    $CachedConn.Value = $conn
+    return $conn
     }
 
     if ($ident) { $Script:LastIdentityPath = $ident }
@@ -399,6 +416,45 @@ function Select-LocalP12File {
     return $null
 }
 
+function Select-SSHKeyFile {
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue | Out-Null
+    $ofd = New-Object System.Windows.Forms.OpenFileDialog
+    $ofd.Title = "Select SSH private key"
+    if ($Script:LastIdentityPath -and (Test-Path $Script:LastIdentityPath)) {
+        $ofd.InitialDirectory = [System.IO.Path]::GetDirectoryName($Script:LastIdentityPath)
+    } else {
+        $ofd.InitialDirectory = Join-Path $HOME ".ssh"
+    }
+    # You might later restrict extensions if you want
+    $ofd.Filter = "All Files (*.*)|*.*"
+    if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        return $ofd.FileName
+    }
+    return $null
+}
+
+function Select-SaveFilePath {
+    param(
+        [string]$Title,
+        [string]$DefaultFileName,
+        [string]$InitialDirectory
+    )
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue | Out-Null
+    $sfd = New-Object System.Windows.Forms.SaveFileDialog
+    $sfd.Title = $Title
+    if ($InitialDirectory -and (Test-Path $InitialDirectory)) {
+        $sfd.InitialDirectory = $InitialDirectory
+    }
+    if ($DefaultFileName) {
+        $sfd.FileName = $DefaultFileName
+    }
+    $sfd.Filter = "All Files (*.*)|*.*"
+    if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        return $sfd.FileName
+    }
+    return $null
+}
+
 function Test-P12Password([string]$FilePath, [string]$Password) {
     $openssl = Get-Command "openssl.exe" -ErrorAction SilentlyContinue
     if (-not $openssl) {
@@ -448,7 +504,12 @@ function Run-ExportSSHProfile {
     $user       = Read-Text "SSH Username"
     $port       = Read-Text "SSH Port (default 22)"
     if (-not $port) { $port = "22" }
-    $ident      = Read-Text "Path to SSH private key (blank for password auth)"
+
+    $ident = ""
+    if (Confirm "Attach SSH private key file to this profile?") {
+        $ident = Select-SSHKeyFile
+        if ($ident) { $Script:LastIdentityPath = $ident }
+    }
 
     $profile = [pscustomobject]@{
         Name         = $name
@@ -979,15 +1040,31 @@ echo "User \$NEWUSER created and configured."
 function Run-ExportPuTTYKey {
     Show-Banner
     Write-Host "Export to PuTTY Private Key (.ppk)"
-    $source = Read-Text "Path to OpenSSH private key (e.g. id_ed25519)"
+
+    # Select source OpenSSH key
+    $source = Select-SSHKeyFile
+    if (-not $source) {
+        Write-Warn "No key selected."
+        Pause
+        return
+    }
     if (-not (Test-Path $source)) {
         Write-Err "File not found: $source"
         Pause
         return
     }
+
     $defaultOut = [IO.Path]::ChangeExtension($source, ".ppk")
-    $dest = Read-Text "Output PuTTY key path (default: $defaultOut)"
-    if (-not $dest) { $dest = $defaultOut }
+    $initialDir = [System.IO.Path]::GetDirectoryName($source)
+    $defaultName = [System.IO.Path]::GetFileName($defaultOut)
+
+    # Select destination .ppk (Save As)
+    $dest = Select-SaveFilePath -Title "Save PuTTY private key (.ppk)" -DefaultFileName $defaultName -InitialDirectory $initialDir
+    if (-not $dest) {
+        Write-Warn "PuTTY export cancelled."
+        Pause
+        return
+    }
 
     $puttygen = Get-Command "puttygen.exe" -ErrorAction SilentlyContinue
     if (-not $puttygen) {
