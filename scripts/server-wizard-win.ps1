@@ -95,6 +95,30 @@ function Ensure-ConfigField {
     }
 }
 
+function Ensure-SshTools {
+    $ssh = Get-Command ssh -ErrorAction SilentlyContinue
+    if (-not $ssh) {
+        Show-Banner
+        Write-Host "ERROR: ssh client not found in PATH." -ForegroundColor $Red
+        Write-Host ""
+        Write-Host "Make sure OpenSSH Client is installed on Windows and 'ssh' works in PowerShell." -ForegroundColor $Cyan
+        Write-Host "After installing, open a NEW PowerShell window and run this wizard again." -ForegroundColor $Cyan
+        Write-Host ""
+        Read-Host "Press Enter to exit..."
+        exit 1
+    }
+}
+
+function Get-KnownHostsPath {
+    $profile = $env:USERPROFILE
+    if (-not $profile) { $profile = $HOME }
+
+    $dir = Join-Path $profile ".ssh"
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+
+    return (Join-Path $dir "known_hosts")
+}
+
 function Ensure-SshKeySelection {
     if ($null -eq $script:Config.UseSshKey) {
         if (Confirm-YesNo "Do you use an SSH private key file (pem/ppk) to connect to your servers?" $true) {
@@ -116,22 +140,32 @@ function Ensure-SshKeySelection {
 }
 
 function Get-SshArgs {
+    Ensure-SshTools
     Ensure-SshKeySelection
     $args = @()
-    if ($script:Config.UseSshKey) {
+    if ($script:Config.UseSshKey -and $script:Config.SshKeyPath) {
         $args += @("-i", $script:Config.SshKeyPath)
     }
-    $args += @("-o", "StrictHostKeyChecking=no")
+    $known = Get-KnownHostsPath
+    $args += @(
+        "-o","StrictHostKeyChecking=no",
+        "-o","UserKnownHostsFile=$known"
+    )
     return $args
 }
 
 function Get-ScpArgs {
+    Ensure-SshTools
     Ensure-SshKeySelection
     $args = @()
-    if ($script:Config.UseSshKey) {
+    if ($script:Config.UseSshKey -and $script:Config.SshKeyPath) {
         $args += @("-i", $script:Config.SshKeyPath)
     }
-    $args += @("-o", "StrictHostKeyChecking=no")
+    $known = Get-KnownHostsPath
+    $args += @(
+        "-o","StrictHostKeyChecking=no",
+        "-o","UserKnownHostsFile=$known"
+    )
     return $args
 }
 
@@ -152,8 +186,9 @@ function Invoke-RemoteInteractive {
     Write-Host ""
 
     & ssh @sshArgs
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "ssh exited with code $LASTEXITCODE. See output above for details." -ForegroundColor $Red
+    $code = $LASTEXITCODE
+    if ($code -ne 0) {
+        Write-Host "ssh exited with code $code. See output above for details." -ForegroundColor $Red
     }
 }
 
@@ -173,9 +208,10 @@ function Invoke-RemoteCapture {
     Write-Host "  $Command" -ForegroundColor $Gray
 
     $out = & ssh @sshArgs 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    $code = $LASTEXITCODE
+    if ($code -ne 0) {
         Write-Host $out -ForegroundColor $Yellow
-        throw "Remote command failed with exit code $LASTEXITCODE."
+        throw "Remote command failed with exit code $code."
     }
     return $out
 }
@@ -454,6 +490,8 @@ function Show-Menu {
         }
     }
 }
+
+Ensure-SshTools
 
 Show-Banner
 Write-Host "This wizard runs on your WINDOWS PC." -ForegroundColor $Cyan
