@@ -24,6 +24,14 @@ $script:Config = @{
 $script:SshExe = $null
 $script:ScpExe = $null
 
+function Get-RealSshExe {
+    return (Get-Command ssh -ErrorAction Stop).Source
+}
+
+function Get-RealScpExe {
+    return (Get-Command scp -ErrorAction Stop).Source
+}
+
 function Show-Banner {
     Clear-Host
     Write-Host "==============================================================" -ForegroundColor $Cyan
@@ -202,7 +210,7 @@ function Invoke-RemoteInteractive {
     Write-Host "       $debugCmd" -ForegroundColor $Yellow
     Write-Host ""
 
-    & ssh @sshArgs
+    & (Get-RealSshExe) @sshArgs
 }
 
 function Invoke-RemoteCapture {
@@ -233,7 +241,7 @@ function Invoke-RemoteCapture {
     Write-Host "       $debugCmd" -ForegroundColor $Yellow
     Write-Host ""
 
-    $out = & ssh @sshArgs 2>&1
+    $out = & (Get-RealSshExe) @sshArgs 2>&1
     $code = $LASTEXITCODE
     if ($code -ne 0) {
         Write-Host $out -ForegroundColor $Yellow
@@ -406,7 +414,7 @@ find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordin
 
     Write-Host ""
     Write-Host "Downloading backup to: $localPath" -ForegroundColor $Cyan
-    $out = & scp @scpArgs 2>&1
+    $out = & (Get-RealScpExe) @scpArgs 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "scp failed with exit code $LASTEXITCODE" -ForegroundColor $Red
         Write-Host $out -ForegroundColor $Yellow
