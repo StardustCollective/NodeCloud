@@ -1,3 +1,5 @@
+& {
+
 # ============================================================
 #  STARDUST COLLECTIVE
 #  SERVER SETUP WIZARD (WINDOWS - LOCAL)
@@ -45,10 +47,7 @@ function Pause-AnyKey {
 }
 
 function Read-NonEmpty {
-    param(
-        [string]$Prompt,
-        [string]$Default = $null
-    )
+    param([string]$Prompt, [string]$Default = $null)
     while ($true) {
         if ($Default) {
             $input = Read-Host "$Prompt [$Default]"
@@ -56,45 +55,32 @@ function Read-NonEmpty {
         } else {
             $input = Read-Host $Prompt
         }
-        if (-not [string]::IsNullOrWhiteSpace($input)) {
-            return $input.Trim()
-        }
+        if ($input) { return $input.Trim() }
     }
 }
 
 function Confirm-YesNo {
-    param(
-        [string]$Prompt,
-        [bool]$DefaultYes = $true
-    )
-
+    param([string]$Prompt, [bool]$DefaultYes = $true)
     $hint = if ($DefaultYes) { "[Y/n]" } else { "[y/N]" }
     $answer = Read-Host "$Prompt $hint"
-
-    if ([string]::IsNullOrWhiteSpace($answer)) {
-        return $DefaultYes
-    }
-
+    if ([string]::IsNullOrWhiteSpace($answer)) { return $DefaultYes }
     return $answer.ToLower() -in @("y","yes")
 }
 
 function Choose-File {
     param([string]$Title = "Select a file")
-
-    $ofd = New-Object System.Windows.Forms.OpenFileDialog
-    $ofd.Title = $Title
-    $ofd.Filter = "All files (*.*)|*.*"
-
-    if ($ofd.ShowDialog() -eq "OK") { return $ofd.FileName }
+    $d = New-Object System.Windows.Forms.OpenFileDialog
+    $d.Title = $Title
+    if ($d.ShowDialog() -eq "OK") { return $d.FileName }
     return $null
 }
 
 function Ensure-SshTools {
     if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
         Show-Banner
-        Write-Host "ERROR: ssh not found in PATH." -ForegroundColor $Red
-        Read-Host "Install OpenSSH Client and reopen PowerShell. Press Enter to exit."
-        exit 1
+        Write-Host "ERROR: SSH not installed." -ForegroundColor $Red
+        Read-Host "Install OpenSSH client and press Enter"
+        exit
     }
 }
 
@@ -106,12 +92,11 @@ function Get-KnownHostsPath {
 
 function Ensure-SshKeySelection {
     if ($null -eq $script:Config.UseSshKey) {
-        $script:Config.UseSshKey = Confirm-YesNo "Use SSH private key file?" $true
+        $script:Config.UseSshKey = Confirm-YesNo "Use SSH private key?" $true
     }
-
     if ($script:Config.UseSshKey -and -not $script:Config.SshKeyPath) {
         $key = Choose-File "Select SSH private key"
-        if (-not $key) { throw "SSH key selection cancelled." }
+        if (-not $key) { throw "Cancelled." }
         $script:Config.SshKeyPath = $key
     }
 }
@@ -130,209 +115,115 @@ function Get-SshArgs {
 }
 
 function Get-ScpArgs {
-    Ensure-SshTools
-    Ensure-SshKeySelection
-
-    $args = @()
-    if ($script:Config.UseSshKey) {
-        $args += @("-i", $script:Config.SshKeyPath)
-    }
-    $known = Get-KnownHostsPath
-    $args += @("-o","StrictHostKeyChecking=no","-o","UserKnownHostsFile=$known")
+    $args = Get-SshArgs
     return $args
 }
 
-# =================================================================
-# CORRECTED: FULL SSH EXECUTION USING Start-Process (NO POPUPS)
-# =================================================================
+# ====================== FIXED SSH EXECUTION ======================
 
 function Invoke-RemoteInteractive {
-    param(
-        [string]$User,
-        [string]$ServerHost,
-        [string]$Command
-    )
+    param($User, $ServerHost, $Command)
 
-    $sshArgs = Get-SshArgs
-    $sshArgs += @("$User@$ServerHost", $Command)
+    $ssh = Get-RealSshExe
+    $args = Get-SshArgs
+    $args += @("$User@$ServerHost", $Command)
 
-    $debug = "ssh " + ($sshArgs -join " ")
-    Write-Host "`nDEBUG SSH COMMAND:" -ForegroundColor Yellow
-    Write-Host "  $debug`n" -ForegroundColor Yellow
+    Write-Host "`nRunning interactive SSH on $User@$ServerHost" -ForegroundColor Gray
+    Write-Host "COMMAND: $Command"
 
-    $exe = Get-RealSshExe
-    Start-Process -FilePath $exe -ArgumentList $sshArgs -NoNewWindow -Wait
+    Start-Process -FilePath $ssh -ArgumentList $args -NoNewWindow -Wait
 }
 
 function Invoke-RemoteCapture {
-    param(
-        [string]$User,
-        [string]$ServerHost,
-        [string]$Command
-    )
+    param($User, $ServerHost, $Command)
 
-    $sshArgs = Get-SshArgs
-    $sshArgs += @("$User@$ServerHost", $Command)
-
-    $debug = "ssh " + ($sshArgs -join " ")
-    Write-Host "`nDEBUG SSH CAPTURE COMMAND:" -ForegroundColor Yellow
-    Write-Host "  $debug`n" -ForegroundColor Yellow
+    $ssh = Get-RealSshExe
+    $args = Get-SshArgs
+    $args += @("$User@$ServerHost", $Command)
 
     $tmp = [System.IO.Path]::GetTempFileName()
-    $exe = Get-RealSshExe
 
-    Start-Process -FilePath $exe `
-                  -ArgumentList $sshArgs `
-                  -RedirectStandardOutput $tmp `
-                  -RedirectStandardError $tmp `
-                  -WindowStyle Hidden `
-                  -Wait
+    Start-Process -FilePath $ssh `
+        -ArgumentList $args `
+        -RedirectStandardOutput $tmp `
+        -RedirectStandardError $tmp `
+        -WindowStyle Hidden `
+        -Wait
 
-    $content = Get-Content $tmp
+    $out = Get-Content $tmp
     Remove-Item $tmp -ErrorAction SilentlyContinue
-    return ($content -join "`n")
+    return ($out -join "`n")
 }
 
-# =================================================================
-# NORMAL WIZARD FUNCTIONS (UNCHANGED)
-# =================================================================
+# ======================= MAIN WIZARD =======================
 
 function Run-CreateNonRootUser {
     Show-Banner
-    Write-Host "CREATE NON-ROOT SUDO USER" -ForegroundColor $Cyan
+    Write-Host "CREATE NON-ROOT USER" -ForegroundColor $Cyan
     Write-Host ""
 
-    Ensure-ConfigField -Field "NewServerHost" -Prompt "New Server IP"
+    Ensure-ConfigField -Field "NewServerHost" -Prompt "New server IP"
     Ensure-ConfigField -Field "NewServerUser" -Prompt "User to connect as"
 
-    if (-not (Confirm-YesNo "Run create_sudo_user.sh on server?")) { return }
+    if (-not (Confirm-YesNo "Run setup on remote server?")) { return }
 
     $cmd = "rm -f create_sudo_user.sh && curl -fsSL -o create_sudo_user.sh https://github.com/StardustCollective/NodeCloud/raw/main/scripts/create_sudo_user.sh && sudo bash create_sudo_user.sh"
 
-    Invoke-RemoteInteractive -User $script:Config.NewServerUser `
-                             -ServerHost $script:Config.NewServerHost `
-                             -Command $cmd
+    Invoke-RemoteInteractive $script:Config.NewServerUser $script:Config.NewServerHost $cmd
 
     Pause-AnyKey
 }
 
-function Select-FromList {
-    param(
-        [string[]]$Items,
-        [string]$Title
-    )
-
-    $index = 0
-    while ($true) {
-        Show-Banner
-        Write-Host $Title -ForegroundColor $Cyan
-        Write-Host ""
-
-        for ($i=0; $i -lt $Items.Count; $i++) {
-            if ($i -eq $index) {
-                Write-Host "> $($Items[$i])" -ForegroundColor $Green
-            } else {
-                Write-Host "  $($Items[$i])"
-            }
-        }
-
-        $key = [Console]::ReadKey($true).Key
-        switch ($key) {
-            "UpArrow"   { $index = ($index - 1 + $Items.Count) % $Items.Count }
-            "DownArrow" { $index = ($index + 1) % $Items.Count }
-            "Enter"     { return $Items[$index] }
-            "Escape"    { return $null }
-        }
-    }
-}
-
 function Backup-P12FromOldServer {
     Show-Banner
-    Write-Host "BACKING UP P12 FROM OLD SERVER" -ForegroundColor $Cyan
-    Write-Host ""
+    Write-Host "P12 BACKUP" -ForegroundColor $Cyan
 
-    Ensure-ConfigField -Field "OldServerHost" -Prompt "Old Server IP"
-    Ensure-ConfigField -Field "OldServerUser" -Prompt "Old Server Username"
+    Ensure-ConfigField -Field "OldServerHost" -Prompt "Old server IP"
+    Ensure-ConfigField -Field "OldServerUser" -Prompt "Old server user"
 
-    if (-not (Confirm-YesNo "Scan for P12 files on old server?")) { return }
+    $find = "find /root /home /var/tessellation /opt -maxdepth 5 -iname '*.p12'"
+    $out = Invoke-RemoteCapture $script:Config.OldServerUser $script:Config.OldServerHost $find
 
-    $findCmd = "find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordinal \) -prune -o -type f -iname '*.p12' -print"
-
-    $output = Invoke-RemoteCapture -User $script:Config.OldServerUser `
-                                   -ServerHost $script:Config.OldServerHost `
-                                   -Command $findCmd
-
-    $paths = $output -split "`n" | Where-Object { $_ -and $_.Trim() }
-    if (-not $paths) { Write-Host "No P12 files found."; Pause-AnyKey; return }
-
-    $selected = Select-FromList -Items $paths -Title "Select the P12 file:"
-    if (-not $selected) { return }
-
-    Write-Host "`nSelected: $selected" -ForegroundColor Green
-
+    Write-Host "`nFOUND:`n$out"
     Pause-AnyKey
 }
 
 function Upload-P12ToNewServer {
     Show-Banner
-    Write-Host "RUNNING WINDOWS P12 UPLOADER" -ForegroundColor $Cyan
-    Write-Host ""
-
-    if (-not (Confirm-YesNo "Launch Windows P12 upload tool now?")) { return }
-
-    iex (iwr "https://github.com/StardustCollective/NodeCloud/raw/main/scripts/uploadP12/windows/upload-p12.ps1" `
-        -UseBasicParsing).Content
-
+    Write-Host "Launching Windows P12 uploader..." -ForegroundColor $Cyan
+    iex (iwr "https://github.com/StardustCollective/NodeCloud/raw/main/scripts/uploadP12/windows/upload-p12.ps1").Content
     Pause-AnyKey
 }
 
 function Full-Flow {
-    Show-Banner
-
-    if (Confirm-YesNo "Step 1: Create non-root user?") {
-        Run-CreateNonRootUser
-    }
-    if (Confirm-YesNo "Step 2: Backup existing P12 from old server?" $true) {
-        Backup-P12FromOldServer
-    }
-    if (Confirm-YesNo "Step 3: Upload P12 to new server?" $true) {
-        Upload-P12ToNewServer
-    }
-
-    Show-Banner
-    Write-Host "ALL STEPS COMPLETE" -ForegroundColor $Green
+    if (Confirm-YesNo "1) Create non-root user?") { Run-CreateNonRootUser }
+    if (Confirm-YesNo "2) Backup P12 from old server?") { Backup-P12FromOldServer }
+    if (Confirm-YesNo "3) Upload P12 to new server?") { Upload-P12ToNewServer }
     Pause-AnyKey
 }
 
 function Show-Menu {
-    $Items = @(
+    $items = @(
         "Full Guided Flow",
         "Create Non-Root User",
         "Backup P12 from Old Server",
         "Upload P12 to New Server",
         "Exit"
     )
-
-    $index = 0
-
+    $i = 0
     while ($true) {
         Show-Banner
-        Write-Host "Use ↑/↓ and Enter" -ForegroundColor $Gray
+        Write-Host "Use Up/Down + Enter" -ForegroundColor Gray
         Write-Host ""
-
-        for ($i=0; $i -lt $Items.Count; $i++) {
-            if ($i -eq $index) {
-                Write-Host "> $($Items[$i])" -ForegroundColor Green
-            } else {
-                Write-Host "  $($Items[$i])"
-            }
+        for ($x=0; $x -lt $items.Count; $x++) {
+            if ($x -eq $i) { Write-Host "> $($items[$x])" -ForegroundColor Green }
+            else { Write-Host "  $($items[$x])" }
         }
-
         switch (([Console]::ReadKey($true)).Key) {
-            "UpArrow"   { $index = ($index - 1 + $Items.Count) % $Items.Count }
-            "DownArrow" { $index = ($index + 1) % $Items.Count }
+            "UpArrow"   { $i = ($i - 1 + $items.Count) % $items.Count }
+            "DownArrow" { $i = ($i + 1) % $items.Count }
             "Enter" {
-                switch ($index) {
+                switch ($i) {
                     0 { Full-Flow }
                     1 { Run-CreateNonRootUser }
                     2 { Backup-P12FromOldServer }
@@ -344,9 +235,12 @@ function Show-Menu {
     }
 }
 
-# start wizard
+# ======================= START =======================
+
 Ensure-SshTools
 Show-Banner
-Write-Host "This wizard runs on your WINDOWS PC." -ForegroundColor $Cyan
-Read-Host "Press Enter to open menu..."
+Write-Host "This wizard runs on your Windows PC." -ForegroundColor $Cyan
+Read-Host "Press Enter to continue..."
 Show-Menu
+
+}  # END WRAPPING BLOCK
