@@ -194,24 +194,20 @@ function Invoke-RemoteInteractive {
     Write-Host ("Running on {0}@{1}:" -f $User, $ServerHost) -ForegroundColor $Gray
     Write-Host "  $Command" -ForegroundColor $Gray
 
-    $debugCmd = "$script:SshExe " + ($sshArgs | ForEach-Object { "'$_'" }) -join " "
+    $debugCmd = "ssh " + ($sshArgs | ForEach-Object {
+        if ($_ -match '\s' -or $_ -match '["]') {
+            '"' + ($_ -replace '"','\"') + '"'
+        } else {
+            $_
+        }
+    }) -join " "
+
     Write-Host ""
-    Write-Host "DEBUG: ssh command being executed:" -ForegroundColor $Yellow
+    Write-Host "DEBUG: ssh command being executed (copy/paste this to test):" -ForegroundColor $Yellow
     Write-Host "       $debugCmd" -ForegroundColor $Yellow
     Write-Host ""
 
     & $script:SshExe @sshArgs
-    $code = $LASTEXITCODE
-
-    if ($null -eq $code) {
-        $code = "(unknown)"
-    }
-
-    if ($code -ne 0 -and $code -ne "(unknown)") {
-        Write-Host "ssh exited with code $code. See output above for details." -ForegroundColor $Red
-    } elseif ($code -eq "(unknown)") {
-        Write-Host "ssh exited with an unknown code (LASTEXITCODE was null)." -ForegroundColor $Red
-    }
 }
 
 function Invoke-RemoteCapture {
@@ -229,25 +225,24 @@ function Invoke-RemoteCapture {
     Write-Host ("Running (capture) on {0}@{1}:" -f $User, $ServerHost) -ForegroundColor $Gray
     Write-Host "  $Command" -ForegroundColor $Gray
 
-    $debugCmd = "$script:SshExe " + ($sshArgs | ForEach-Object { "'$_'" }) -join " "
+    $debugCmd = "ssh " + ($sshArgs | ForEach-Object {
+        if ($_ -match '\s' -or $_ -match '["]') {
+            '"' + ($_ -replace '"','\"') + '"'
+        } else {
+            $_
+        }
+    }) -join " "
+
     Write-Host ""
-    Write-Host "DEBUG: ssh command being executed (capture):" -ForegroundColor $Yellow
+    Write-Host "DEBUG (capture): ssh command being executed:" -ForegroundColor $Yellow
     Write-Host "       $debugCmd" -ForegroundColor $Yellow
     Write-Host ""
 
     $out = & $script:SshExe @sshArgs 2>&1
     $code = $LASTEXITCODE
-
-    if ($null -eq $code) {
-        $code = "(unknown)"
-    }
-
-    if ($code -ne 0 -and $code -ne "(unknown)") {
+    if ($code -ne 0) {
         Write-Host $out -ForegroundColor $Yellow
         throw "Remote command failed with exit code $code."
-    } elseif ($code -eq "(unknown)") {
-        Write-Host $out -ForegroundColor $Yellow
-        throw "Remote command failed with unknown exit code (LASTEXITCODE was null)."
     }
     return $out
 }
