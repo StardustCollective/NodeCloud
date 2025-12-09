@@ -317,7 +317,11 @@ function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
 # SSH HELPERS
 # ====================
 function Build-SshBaseArgs($Conn) {
-    $args = @("-p", $Conn.Port)
+    $args = @(
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=$Script:KnownHosts",
+        "-p", $Conn.Port
+    )
     if ($Conn.IdentityFile) {
         $args += @("-i", $Conn.IdentityFile)
     }
@@ -732,28 +736,45 @@ echo "User \$NEWUSER created and configured."
     $args += ("{0}@{1}" -f $conn.User, $conn.Host)
     $args += "bash -s"
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "ssh"
-    $psi.Arguments = [string]::Join(" ", $args)
-    $psi.RedirectStandardInput = $true
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError  = $true
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $false
+    $maxRetries = 1
+    $attempt    = 0
+    $hostName   = $conn.Host
+    $success    = $false
 
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    $proc.StandardInput.WriteLine($remoteUserScript)
-    $proc.StandardInput.Close()
-    $out = $proc.StandardOutput.ReadToEnd()
-    $err = $proc.StandardError.ReadToEnd()
-    $proc.WaitForExit()
+    while ($attempt -le $maxRetries -and -not $success) {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName               = "ssh"
+        $psi.Arguments              = [string]::Join(" ", $args)
+        $psi.RedirectStandardInput  = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError  = $true
+        $psi.UseShellExecute        = $false
+        $psi.CreateNoWindow         = $false
 
-    if ($out) { Write-Host $out }
-    if ($err) { Write-Host $err }
-    if ($proc.ExitCode -ne 0) {
-        Write-Err "Remote user creation script failed (exit $($proc.ExitCode))."
-        Pause
-        return
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $proc.StandardInput.WriteLine($remoteUserScript)
+        $proc.StandardInput.Close()
+        $out = $proc.StandardOutput.ReadToEnd()
+        $err = $proc.StandardError.ReadToEnd()
+        $proc.WaitForExit()
+
+        if ($out) { Write-Host $out }
+        if ($err) { Write-Host $err }
+
+        if ($proc.ExitCode -eq 0) {
+            $success = $true
+        }
+        elseif ($err -like "*REMOTE HOST IDENTIFICATION HAS CHANGED!*" -and $attempt -lt $maxRetries) {
+            Write-Warn "Host key mismatch detected for $hostName during user creation. Cleaning known_hosts and retrying..."
+            & ssh-keygen -R $hostName | Out-Null
+            $attempt++
+            continue
+        }
+        else {
+            Write-Err "Remote user creation script failed (exit $($proc.ExitCode))."
+            Pause
+            return
+        }
     }
 
     Write-Ok "Remote user '$newUser' created (or already present)."
@@ -994,28 +1015,48 @@ echo "User \$NEWUSER created and configured."
     $args += ("{0}@{1}" -f $conn.User, $conn.Host)
     $args += "bash -s"
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "ssh"
-    $psi.Arguments = [string]::Join(" ", $args)
-    $psi.RedirectStandardInput = $true
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError  = $true
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $false
+    $maxRetries = 1
+    $attempt    = 0
+    $hostName   = $conn.Host
+    $success    = $false
 
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    $proc.StandardInput.WriteLine($remoteUserScript)
-    $proc.StandardInput.Close()
-    $out = $proc.StandardOutput.ReadToEnd()
-    $err = $proc.StandardError.ReadToEnd()
-    $proc.WaitForExit()
+    while ($attempt -le $maxRetries -and -not $success) {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName               = "ssh"
+        $psi.Arguments              = [string]::Join(" ", $args)
+        $psi.RedirectStandardInput  = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError  = $true
+        $psi.UseShellExecute        = $false
+        $psi.CreateNoWindow         = $false
 
-    if ($out) { Write-Host $out }
-    if ($err) { Write-Host $err }
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $proc.StandardInput.WriteLine($remoteUserScript)
+        $proc.StandardInput.Close()
+        $out = $proc.StandardOutput.ReadToEnd()
+        $err = $proc.StandardError.ReadToEnd()
+        $proc.WaitForExit()
 
-    if ($proc.ExitCode -ne 0) {
-        Write-Err "Remote user creation script failed (exit $($proc.ExitCode))."
-    } else {
+        if ($out) { Write-Host $out }
+        if ($err) { Write-Host $err }
+
+        if ($proc.ExitCode -eq 0) {
+            $success = $true
+        }
+        elseif ($err -like "*REMOTE HOST IDENTIFICATION HAS CHANGED!*" -and $attempt -lt $maxRetries) {
+            Write-Warn "Host key mismatch detected for $hostName during user creation. Cleaning known_hosts and retrying..."
+            & ssh-keygen -R $hostName | Out-Null
+            $attempt++
+            continue
+        }
+        else {
+            Write-Err "Remote user creation script failed (exit $($proc.ExitCode))."
+            Pause
+            return
+        }
+    }
+
+    if ($success) {
         Write-Ok "Remote user creation script executed."
     }
     Pause
