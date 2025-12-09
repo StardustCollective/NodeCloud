@@ -21,6 +21,9 @@ $script:Config = @{
     LocalP12Path  = $null
 }
 
+$script:SshExe = $null
+$script:ScpExe = $null
+
 function Show-Banner {
     Clear-Host
     Write-Host "==============================================================" -ForegroundColor $Cyan
@@ -96,16 +99,23 @@ function Ensure-ConfigField {
 }
 
 function Ensure-SshTools {
-    $ssh = Get-Command ssh -ErrorAction SilentlyContinue
-    if (-not $ssh) {
-        Show-Banner
-        Write-Host "ERROR: ssh client not found in PATH." -ForegroundColor $Red
-        Write-Host ""
-        Write-Host "Make sure OpenSSH Client is installed on Windows and 'ssh' works in PowerShell." -ForegroundColor $Cyan
-        Write-Host "After installing, open a NEW PowerShell window and run this wizard again." -ForegroundColor $Cyan
-        Write-Host ""
-        Read-Host "Press Enter to exit..."
-        exit 1
+    if (-not $script:SshExe -or -not $script:ScpExe) {
+        $ssh = Get-Command ssh -ErrorAction SilentlyContinue
+        $scp = Get-Command scp -ErrorAction SilentlyContinue
+
+        if (-not $ssh -or -not $scp) {
+            Show-Banner
+            Write-Host "ERROR: ssh/scp client not found in PATH." -ForegroundColor $Red
+            Write-Host ""
+            Write-Host "Make sure OpenSSH Client is installed on Windows and 'ssh' / 'scp' work in PowerShell." -ForegroundColor $Cyan
+            Write-Host "After installing, open a NEW PowerShell window and run this wizard again." -ForegroundColor $Cyan
+            Write-Host ""
+            Read-Host "Press Enter to exit..."
+            exit 1
+        }
+
+        $script:SshExe = $ssh.Source
+        $script:ScpExe = $scp.Source
     }
 }
 
@@ -185,7 +195,7 @@ function Invoke-RemoteInteractive {
     Write-Host "  $Command" -ForegroundColor $Gray
     Write-Host ""
 
-    & ssh @sshArgs
+    & $script:SshExe @sshArgs
     $code = $LASTEXITCODE
     if ($code -ne 0) {
         Write-Host "ssh exited with code $code. See output above for details." -ForegroundColor $Red
@@ -207,7 +217,7 @@ function Invoke-RemoteCapture {
     Write-Host ("Running (capture) on {0}@{1}:" -f $User, $ServerHost) -ForegroundColor $Gray
     Write-Host "  $Command" -ForegroundColor $Gray
 
-    $out = & ssh @sshArgs 2>&1
+    $out = & $script:SshExe @sshArgs 2>&1
     $code = $LASTEXITCODE
     if ($code -ne 0) {
         Write-Host $out -ForegroundColor $Yellow
@@ -380,7 +390,7 @@ find /root /home /var/tessellation /opt -maxdepth 5 \( -name hash -o -name ordin
 
     Write-Host ""
     Write-Host "Downloading backup to: $localPath" -ForegroundColor $Cyan
-    $out = & scp @scpArgs 2>&1
+    $out = & $script:ScpExe @scpArgs 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "scp failed with exit code $LASTEXITCODE" -ForegroundColor $Red
         Write-Host $out -ForegroundColor $Yellow
@@ -476,8 +486,8 @@ function Show-Menu {
         $key = [System.Console]::ReadKey($true)
 
         switch ($key.Key) {
-            "UpArrow"   { $index = ($index - 1); if ($index -lt 0) { $index = $items.Count - 1 } }
-            "DownArrow" { $index = ($index + 1); if ($index -ge $items.Count) { $index = 0 } }
+            "UpArrow"   { $index = ($index - 1); if ($index -lt 0) { $index = $Items.Count - 1 } }
+            "DownArrow" { $index = ($index + 1); if ($index -ge $Items.Count) { $index = 0 } }
             "Enter" {
                 switch ($index) {
                     0 { Full-Flow }
