@@ -1219,7 +1219,8 @@ function Run-NewServerSetup {
 
     Show-MessageBoxInfo "New Server Setup will create a non-root sudo user, copy SSH keys, test login, and optionally harden sshd." "New Server Setup"
 
-    $win = New-Window -Title "New User on Remote Server" -Width 420 -Height 260
+    # Dialog for new user + password
+    $win  = New-Window -Title "New User on Remote Server" -Width 420 -Height 260
     $root = New-StackPanel -Orientation Vertical -Margin 16
     $root.Children.Add((New-Label -Text "Create a new non-root sudo user on the remote server" -FontSize 14 -Bold $true)) | Out-Null
 
@@ -1244,7 +1245,7 @@ function Run-NewServerSetup {
         [Windows.Controls.Grid]::SetRow($control, $rowIndex)
         [Windows.Controls.Grid]::SetColumn($control, 1)
 
-        $grid.Children.Add($lbl) | Out-Null
+        $grid.Children.Add($lbl)  | Out-Null
         $grid.Children.Add($control) | Out-Null
     }
 
@@ -1293,7 +1294,7 @@ function Run-NewServerSetup {
     })
 
     $btnPanel.Children.Add($btnCancel) | Out-Null
-    $btnPanel.Children.Add($btnOK) | Out-Null
+    $btnPanel.Children.Add($btnOK)     | Out-Null
 
     $root.Children.Add($btnPanel) | Out-Null
     $win.Content = $root
@@ -1310,9 +1311,14 @@ function Run-NewServerSetup {
     $pass    = $pwd1.Password
     Write-Info "Creating new user '$newUser' on $($conn.Host)."
 
+    #
+    # ROOT LOGIN PATH: open ssh.exe window, optional auto-password, inject script with SendKeys
+    #
     if ($conn.User -eq "root") {
         Write-Warn "New Server Setup: detected root login. Using interactive SSH bootstrap mode for '$newUser'."
 
+        # If we do not already have a password (e.g. profile-based connection),
+        # prompt the user now for the root SSH password.
         if (-not ($conn.PSObject.Properties.Match('Password').Count -gt 0 -and $conn.Password)) {
 
             $pwWin  = New-Window -Title "Root SSH Password" -Width 360 -Height 200
@@ -1322,19 +1328,19 @@ function Run-NewServerSetup {
             $pwBox = New-TextBox -IsPassword $true
             $pwRoot.Children.Add($pwBox) | Out-Null
 
-            $btnPanel = New-Object Windows.Controls.StackPanel
-            $btnPanel.Orientation = "Horizontal"
-            $btnPanel.HorizontalAlignment = "Center"
-            $btnPanel.Margin = "0,16,0,0"
+            $pwBtns = New-Object Windows.Controls.StackPanel
+            $pwBtns.Orientation = "Horizontal"
+            $pwBtns.HorizontalAlignment = "Center"
+            $pwBtns.Margin = "0,16,0,0"
 
-            $btnCancel = New-Button -Content "Cancel"
-            $btnCancel.Width = 100
-            $btnCancel.Margin = "0,0,12,0"
-            $btnCancel.Add_Click({ $pwWin.DialogResult = $false; $pwWin.Close() })
+            $pwCancel = New-Button -Content "Cancel"
+            $pwCancel.Width = 100
+            $pwCancel.Margin = "0,0,12,0"
+            $pwCancel.Add_Click({ $pwWin.DialogResult = $false; $pwWin.Close() })
 
-            $btnOK = New-Button -Content "OK"
-            $btnOK.Width = 100
-            $btnOK.Add_Click({
+            $pwOK = New-Button -Content "OK"
+            $pwOK.Width = 100
+            $pwOK.Add_Click({
                 if (-not $pwBox.Password) {
                     Show-MessageBoxWarn "Password cannot be empty." "Root SSH Password"
                     return
@@ -1343,9 +1349,9 @@ function Run-NewServerSetup {
                 $pwWin.Close()
             })
 
-            $btnPanel.Children.Add($btnCancel) | Out-Null
-            $btnPanel.Children.Add($btnOK) | Out-Null
-            $pwRoot.Children.Add($btnPanel) | Out-Null
+            $pwBtns.Children.Add($pwCancel) | Out-Null
+            $pwBtns.Children.Add($pwOK)     | Out-Null
+            $pwRoot.Children.Add($pwBtns)   | Out-Null
 
             $pwWin.Content = $pwRoot
             $null = $pwWin.ShowDialog()
@@ -1374,6 +1380,9 @@ function Run-NewServerSetup {
         return
     }
 
+    #
+    # NON-ROOT PATH: run fully scripted user creation via Invoke-SshCommand (key-based ssh)
+    #
     $remoteScript = @'
 set -e
 NEWUSER='{0}'
@@ -1425,92 +1434,15 @@ fi
 echo "Bootstrap complete for $NEWUSER."
 '@ -f $newUser, $pass
 
-        $tmpDir    = [System.IO.Path]::GetTempPath()
-        $tmpScript = Join-Path $tmpDir ("server-toolkit-bootstrap-{0}-{1}.sh" -f $conn.Host, $newUser)
-        Write-Info "Writing root bootstrap script for '$newUser' to $tmpScript"
-        Set-Content -LiteralPath $tmpScript -Value $bootstrapScript -Encoding UTF8
-
-        $sshArgs = @()
-        $sshArgs += "-p $($conn.Port)"
-        $sshArgs += "-o StrictHostKeyChecking=no"
-        $sshArgs += "-o UserKnownHostsFile=`"$($Script:KnownHosts)`""
-        $sshArgs += "$($conn.User)@$($conn.Host) 'bash -s'"
-
-        $sshCommand = "ssh.exe " + ($sshArgs -join " ")
-        $cmdLine    = "type `"$tmpScript`" | $sshCommand"
-
-        Write-Info "Launching interactive bootstrap console with: $cmdLine"
-        [System.Windows.MessageBox]::Show(
-            "A new console window will open and run:" + [Environment]::NewLine +
-            "  type `"$tmpScript`" | ssh ... 'bash -s'" + [Environment]::NewLine + [Environment]::NewLine +
-            "In that window:" + [Environment]::NewLine +
-            "  1) When prompted, type the ROOT SSH password for $($conn.Host)." + [Environment]::NewLine +
-            "  2) After successful login, the script will automatically create '$newUser'," + [Environment]::NewLine +
-            "     set its password, add sudo, and copy authorized_keys (if available).",
-            "Root Bootstrap Instructions",
-            'OK',
-            'Information'
-        ) | Out-Null
-
-        Start-Process -FilePath "cmd.exe" -ArgumentList "/k $cmdLine" | Out-Null
-
-        return
-    }
-
-    $remoteScript = @'
-set -e
-NEWUSER='{0}'
-
-if id "$NEWUSER" >/dev/null 2>&1; then
-  echo "User $NEWUSER already exists. Skipping creation."
-  exit 0
-fi
-
-if command -v useradd >/dev/null 2>&1; then
-  useradd -m -s /bin/bash "$NEWUSER" || echo "useradd returned non-zero (possibly user already exists). Continuing..."
-elif command -v adduser >/dev/null 2>&1; then
-  adduser --disabled-password --gecos "" "$NEWUSER" || echo "adduser returned non-zero (possibly user already exists). Continuing..."
-else
-  echo "Neither useradd nor adduser is available on this system."
-  exit 1
-fi
-
-echo "{0}:{1}" | chpasswd
-
-if getent group sudo >/dev/null 2>&1; then
-  usermod -aG sudo "$NEWUSER"
-elif getent group wheel >/dev/null 2>&1; then
-  usermod -aG wheel "$NEWUSER"
-fi
-
-SRC_KEYS=""
-if [ -f "/root/.ssh/authorized_keys" ]; then
-  SRC_KEYS="/root/.ssh/authorized_keys"
-elif [ -n "$SUDO_USER" ] && [ -f "/home/$SUDO_USER/.ssh/authorized_keys" ]; then
-  SRC_KEYS="/home/$SUDO_USER/.ssh/authorized_keys"
-fi
-
-if [ -n "$SRC_KEYS" ]; then
-  HOME_DIR=$(eval echo "~$NEWUSER")
-  mkdir -p "$HOME_DIR/.ssh"
-  cp "$SRC_KEYS" "$HOME_DIR/.ssh/authorized_keys"
-  chown -R "$NEWUSER:$NEWUSER" "$HOME_DIR/.ssh"
-  chmod 700 "$HOME_DIR/.ssh"
-  chmod 600 "$HOME_DIR/.ssh/authorized_keys"
-fi
-
-echo "User $NEWUSER created and configured."
-'@ -f $newUser, $pass
-
     $cmd = "bash -s"
     $res = Invoke-SshCommand `
-        -HostName   $conn.Host `
-        -User       $conn.User `
-        -Port       $conn.Port `
+        -HostName    $conn.Host `
+        -User        $conn.User `
+        -Port        $conn.Port `
         -IdentityFile $conn.IdentityFile `
-        -Command    $cmd `
-        -InputData  $remoteScript `
-        -TimeoutMs  120000
+        -Command     $cmd `
+        -InputData   $remoteScript `
+        -TimeoutMs   120000
 
     if ($res.ExitCode -ne 0) {
         $msg = "Remote user creation script failed.`nExitCode: $($res.ExitCode)`nError: $($res.StdErr)"
