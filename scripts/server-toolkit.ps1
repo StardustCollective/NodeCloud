@@ -264,6 +264,7 @@ function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
 
     $profiles = Get-StoredProfiles
     if ($profiles -and $profiles.Count -gt 0) {
+        Write-Info "Detected $($profiles.Count) stored connection profile(s) in $Script:ProfilesDir."
         if (Confirm "Load a stored connection profile for $Purpose?" $false) {
             $p = Select-ProfileFromDisk "$Purpose"
             if ($p) {
