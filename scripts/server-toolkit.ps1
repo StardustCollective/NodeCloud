@@ -254,29 +254,32 @@ function Select-ProfileFromDisk([string]$Purpose) {
 }
 
 function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
+    Write-Info "DEBUG: Prompt-Connection called for $Purpose"
+    # 1) Reuse cached connection if available (default = Y here, you can flip to N if you prefer)
     if ($CachedConn.Value) {
         $c = $CachedConn.Value
-        if (Confirm "Reuse $Purpose connection: $($c.User)@$($c.Host):$($c.Port)?" $true) {
+        if (Confirm "Reuse $Purpose connection: $($c.User)@$($c.Host):$($c.Port)?" $false) {
             Prepare-HostKey $c.Host
             return $c
         }
     }
 
+    # 2) If we have stored profiles, always offer the list first
     $profiles = Get-StoredProfiles
     if ($profiles -and $profiles.Count -gt 0) {
         Write-Info "Detected $($profiles.Count) stored connection profile(s) in $Script:ProfilesDir."
-        if (Confirm "Load a stored connection profile for $Purpose?" $false) {
-            $p = Select-ProfileFromDisk "$Purpose"
-            if ($p) {
-                $CachedConn.Value = $p
-                Prepare-HostKey $p.Host
-                return $p
-            }
+        $p = Select-ProfileFromDisk "$Purpose"
+        if ($p) {
+            $CachedConn.Value = $p
+            Prepare-HostKey $p.Host
+            return $p
         }
+        # If user hits Esc in the profile selector, we fall through to manual entry
     } else {
         Write-Warn "No stored connection profiles found in $Script:ProfilesDir matching '*_ssh_config.txt'."
     }
 
+    # 3) Manual entry as fallback
     Show-Banner
     Write-Host "$Purpose - manual connection entry"
     $serverHost = Read-Text "Server IP or Hostname"
@@ -427,6 +430,7 @@ function Select-SSHKeyFile {
         $ofd.InitialDirectory = Join-Path $HOME ".ssh"
     }
 
+    # Bias toward common key filenames, including PuTTY .ppk, but still allow all files
     $ofd.Filter = "SSH Keys (*.pem;*.ppk;id_ed25519;id_rsa;id_ecdsa;id_dsa;*_key)|*.pem;*.ppk;id_ed25519;id_rsa;id_ecdsa;id_dsa;*_key|All Files (*.*)|*.*"
 
     while ($true) {
@@ -440,6 +444,7 @@ function Select-SSHKeyFile {
             continue
         }
 
+        # Read first line to determine key type
         $firstLine = $null
         try {
             $firstLine = (Get-Content -Path $path -TotalCount 1 -ErrorAction Stop)
@@ -448,16 +453,23 @@ function Select-SSHKeyFile {
             continue
         }
 
+        # Case 1: OpenSSH / PEM-style private key
         if ($firstLine -match '-----BEGIN (OPENSSH|RSA|EC|DSA|ED25519) PRIVATE KEY-----') {
             return $path
         }
 
+        # Case 2: PuTTY private key (.ppk)
         if ($firstLine -match '^PuTTY-User-Key-File-') {
             Write-Info "Detected PuTTY private key (.ppk): $path"
 
             $puttygen = Get-Command "puttygen.exe" -ErrorAction SilentlyContinue
             if (-not $puttygen) {
                 Write-Err "puttygen.exe not found in PATH. Cannot convert PuTTY key to OpenSSH format."
+
+                if (Confirm "Open PuTTY download page to install PuTTY/puttygen now?" $false) {
+                    Start-Process "https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html" | Out-Null
+                }
+
                 Write-Warn "Please install PuTTY/puttygen or select a different key."
                 continue
             }
@@ -467,10 +479,11 @@ function Select-SSHKeyFile {
                 continue
             }
 
-            $dir      = [System.IO.Path]::GetDirectoryName($path)
-            $base     = [System.IO.Path]::GetFileNameWithoutExtension($path)
+            $dir        = [System.IO.Path]::GetDirectoryName($path)
+            $base       = [System.IO.Path]::GetFileNameWithoutExtension($path)
             $defaultOut = [System.IO.Path]::Combine($dir, "$base-openssh-key.pem")
 
+            # Ask user where to save the converted OpenSSH key
             $dest = Select-SaveFilePath -Title "Save converted OpenSSH private key" -DefaultFileName ([System.IO.Path]::GetFileName($defaultOut)) -InitialDirectory $dir
             if (-not $dest) {
                 Write-Warn "PuTTY key conversion cancelled. Please select another key."
@@ -484,6 +497,7 @@ function Select-SSHKeyFile {
                 }
             }
 
+            # Convert PuTTY -> OpenSSH
             & $puttygen.Source $path "-O" "private-openssh" "-o" $dest
             if ($LASTEXITCODE -eq 0) {
                 Write-Ok "Converted PuTTY key saved to: $dest"
@@ -494,6 +508,7 @@ function Select-SSHKeyFile {
             }
         }
 
+        # Anything else: reject and loop again
         Write-Warn "The selected file does not look like a supported SSH private key. Please choose another file."
     }
 }
