@@ -1236,8 +1236,8 @@ echo "Bootstrap complete for $NEWUSER."
 '@ -f $newUser, $pass
 
     #
-    # ROOT FLOW: open a new cmd.exe window that pipes the script into ssh.exe
-    # User types the root password in that window; after auth, the script runs automatically.
+    # ROOT FLOW: open a new cmd.exe window that pipes the script into ssh.exe.
+    # User types the root/key passphrase in that window; after auth, the script runs automatically.
     #
     if ($conn.User -eq "root") {
         Write-Warn "New Server Setup: detected root login. Using piped ssh.exe flow for '$newUser'."
@@ -1254,24 +1254,12 @@ echo "Bootstrap complete for $NEWUSER."
         $sshArgs += "-p $($conn.Port)"
         $sshArgs += "-o StrictHostKeyChecking=no"
         $sshArgs += "-o UserKnownHostsFile=`"$($Script:KnownHosts)`""
-        $sshArgs += "$($conn.User)@$($conn.Host) 'bash -s'"
+        $sshArgs += "$($conn.User)@$($conn.Host)"
 
         $sshCommand = "ssh.exe " + ($sshArgs -join " ")
         $cmdLine    = "type `"$tmpScript`" | $sshCommand"
 
         Write-Info "Launching bootstrap console with: $cmdLine"
-        [System.Windows.MessageBox]::Show(
-            "A new console window will open and run:" + [Environment]::NewLine +
-            "  type `"$tmpScript`" | ssh ... 'bash -s'" + [Environment]::NewLine + [Environment]::NewLine +
-            "In that window:" + [Environment]::NewLine +
-            "  1) When prompted, type the ROOT SSH password for $($conn.Host)." + [Environment]::NewLine +
-            "  2) After authentication, the script will automatically create '$newUser'," + [Environment]::NewLine +
-            "     set its password, add sudo, and copy authorized_keys (if available).",
-            "Root Bootstrap",
-            'OK',
-            'Information'
-        ) | Out-Null
-
         Start-Process -FilePath "cmd.exe" -ArgumentList "/k $cmdLine" | Out-Null
         return
     }
