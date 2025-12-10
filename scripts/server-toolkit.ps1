@@ -501,7 +501,8 @@ function Invoke-SshCommand {
         [string]$Port = "22",
         [string]$IdentityFile,
         [string]$Command,
-        [string]$InputData
+        [string]$InputData,
+        [int]   $TimeoutMs = 30000
     )
 
     $args = @(
@@ -1221,10 +1222,13 @@ echo "User $NEWUSER created and configured."
         -Port       $conn.Port `
         -IdentityFile $conn.IdentityFile `
         -Command    $cmd `
-        -InputData  $remoteScript
+        -InputData  $remoteScript `
+        -TimeoutMs  120000
 
     if ($res.ExitCode -ne 0) {
-        Show-MessageBoxError "Remote user creation script failed:`n$res.StdErr" "New Server Setup"
+        $msg = "Remote user creation script failed.`nExitCode: $($res.ExitCode)`nError: $($res.StdErr)"
+        Write-ErrorLog "New Server Setup: $msg"
+        Show-MessageBoxError $msg "New Server Setup"
         return
     }
 
