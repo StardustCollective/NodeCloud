@@ -21,15 +21,14 @@ $Host.UI.RawUI.WindowTitle = "Stardust Collective - Server Toolkit"
 
 $Script:ProfilesDir   = Join-Path $HOME ".ssh"
 $Script:KnownHosts    = Join-Path $HOME ".ssh\known_hosts"
-$Script:CachedPass    = @{}        # per-session password cache (not persisted)
-$Script:NewServerConn = $null      # per-session connection object for "new server"
-$Script:OldServerConn = $null      # per-session connection object for "old server"
+$Script:CachedPass    = @{}
+$Script:NewServerConn = $null
+$Script:OldServerConn = $null
 
-# Session-scoped convenience caches (not persisted)
-$Script:LastP12Path       = $null  # last selected local .p12 path
-$Script:LastIdentityPath  = $null  # last entered SSH private key path
+$Script:LastP12Path       = $null 
+$Script:LastIdentityPath  = $null
+$Script:CleanedHosts      = New-Object 'System.Collections.Generic.HashSet[string]'
 
-# Ensure .ssh directory exists
 if (-not (Test-Path $Script:ProfilesDir)) {
     New-Item -ItemType Directory -Path $Script:ProfilesDir | Out-Null
 }
@@ -54,18 +53,18 @@ function Read-Text([string]$Prompt) {
     Read-Host
 }
 
-function Read-TextWithDefault([string]$Prompt, [string]$Default) {
-    if ($Default) {
-        Write-Host ("{0} [{1}]: " -f $Prompt, $Default) -NoNewline
-    } else {
-        Write-Host ("{0}: " -f $Prompt) -NoNewline
-    }
-    $resp = Read-Host
-    if ([string]::IsNullOrWhiteSpace($resp)) {
-        return $Default
-    }
-    return $resp
-}
+# function Read-TextWithDefault([string]$Prompt, [string]$Default) {
+#     if ($Default) {
+#         Write-Host ("{0} [{1}]: " -f $Prompt, $Default) -NoNewline
+#     } else {
+#         Write-Host ("{0}: " -f $Prompt) -NoNewline
+#     }
+#     $resp = Read-Host
+#     if ([string]::IsNullOrWhiteSpace($resp)) {
+#         return $Default
+#     }
+#     return $resp
+# }
 
 function Read-PasswordText([string]$Prompt) {
     Write-Host ("{0}: " -f $Prompt) -NoNewline
@@ -139,9 +138,9 @@ function Show-MainMenu {
 
         $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         switch ($key.VirtualKeyCode) {
-            38 { if ($index -gt 0) { $index-- } }               # Up
+            38 { if ($index -gt 0) { $index-- } }                # Up
             40 { if ($index -lt $items.Count - 1) { $index++ } } # Down
-            13 { return $items[$index] }                        # Enter
+            13 { return $items[$index] }                         # Enter
         }
     }
 }
@@ -249,33 +248,32 @@ function Select-ProfileFromDisk([string]$Purpose) {
         switch ($key.VirtualKeyCode) {
             38 { if ($index -gt 0)                 { $index-- } }             # Up
             40 { if ($index -lt $profiles.Count-1) { $index++ } }             # Down
-            13 { return $profiles[$index] }                                    # Enter
+            13 { return $profiles[$index] }                                   # Enter
         }
     }
 }
 
 function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
-    # 1) Reuse cached connection if available
     if ($CachedConn.Value) {
         $c = $CachedConn.Value
         if (Confirm "Reuse $Purpose connection: $($c.User)@$($c.Host):$($c.Port)?" $false) {
+            Prepare-HostKey $c.Host
             return $c
         }
     }
 
-    # 2) Load stored profiles (if any)
     $profiles = Get-StoredProfiles
     if ($profiles -and $profiles.Count -gt 0) {
         if (Confirm "Load a stored connection profile for $Purpose?" $false) {
             $p = Select-ProfileFromDisk "$Purpose"
             if ($p) {
                 $CachedConn.Value = $p
+                Prepare-HostKey $p.Host
                 return $p
             }
         }
     }
 
-    # 3) Manual entry
     Show-Banner
     Write-Host "$Purpose - manual connection entry"
     $serverHost = Read-Text "Server IP or Hostname"
@@ -308,12 +306,22 @@ function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
     }
 
     $CachedConn.Value = $conn
+    Prepare-HostKey $conn.Host
     return $conn
 }
 
 # ====================
 # SSH HELPERS
 # ====================
+function Prepare-HostKey([string]$HostName) {
+    if ([string]::IsNullOrWhiteSpace($HostName)) { return }
+
+    if (-not $Script:CleanedHosts.Contains($HostName)) {
+        & ssh-keygen -R $HostName | Out-Null
+        $Script:CleanedHosts.Add($HostName) | Out-Null
+    }
+}
+
 function Build-SshBaseArgs($Conn) {
     $args = @(
         "-o", "StrictHostKeyChecking=no",
@@ -328,7 +336,7 @@ function Build-SshBaseArgs($Conn) {
 
 function Invoke-OpenSSHWithKnownHostsFix {
     param(
-        [Parameter(Mandatory=$true)][string]$Exe,    # "ssh" or "scp"
+        [Parameter(Mandatory=$true)][string]$Exe,
         [Parameter(Mandatory=$true)][string[]]$Args,
         [Parameter(Mandatory=$true)][string]$HostName,
         [int]$MaxRetries = 1
@@ -479,7 +487,6 @@ function Get-P12Alias([string]$FilePath, [string]$Password) {
 # FEATURES
 # ====================
 
-# 1) EXPORT SSH CONFIG MANUALLY
 function Run-ExportSSHProfile {
     Show-Banner
     Write-Host "Export SSH-Config File"
@@ -512,7 +519,6 @@ function Run-ExportSSHProfile {
     Pause
 }
 
-# 2) BACKUP P12 FROM OLD SERVER
 function Run-BackupP12 {
     $conn = Prompt-Connection "Old Server (P12 backup source)" ([ref]$Script:OldServerConn)
     if (-not $conn) { Pause; return }
@@ -578,11 +584,9 @@ function Run-BackupP12 {
     }
 }
 
-# 3) UPLOAD P12 TO NEW SERVER
 function Run-UploadP12 {
     $file = $null
 
-    # Offer to reuse last P12 path if known and exists
     if ($Script:LastP12Path -and (Test-Path $Script:LastP12Path)) {
         if (Confirm ("Reuse last selected .p12 file? `"$($Script:LastP12Path)`"")) {
             $file = $Script:LastP12Path
@@ -653,7 +657,6 @@ function Run-UploadP12 {
     Pause
 }
 
-# 4) NEW SERVER SETUP (REMOTE SCAFFOLD)
 function Run-NewServerSetup {
     $conn = Prompt-Connection "New Server (initial root or admin login)" ([ref]$Script:NewServerConn)
     if (-not $conn) { Pause; return }
@@ -668,14 +671,12 @@ function Run-NewServerSetup {
     Write-Host "  - Optionally harden sshd to disable root SSH and lock root password"
     Write-Host
 
-    # Ask if we should create a non-root user at all
     if (-not (Confirm "Create a new non-root sudo user now? (recommended)" $false)) {
         Write-Warn "Skipping non-root user creation. Root SSH login will remain enabled."
         Pause
         return
     }
 
-    # 1) Ask for new user credentials
     $newUser = Read-Text "Enter new username (default: nodeadmin)"
     if (-not $newUser) { $newUser = "nodeadmin" }
 
@@ -687,7 +688,6 @@ function Run-NewServerSetup {
         return
     }
 
-    # 2) Remote script: create user + add to sudo/wheel + copy authorized_keys
     Write-Info "Creating non-root user '$newUser' on remote server..."
     $remoteUserScript = @"
 set -e
@@ -782,7 +782,6 @@ echo "User \$NEWUSER created and configured."
 
     Write-Ok "Remote user '$newUser' created (or already present)."
 
-    # 3) Test SSH login as new user (using same IdentityFile and port)
     Write-Info "Testing SSH login as $newUser..."
     $testConn = [pscustomobject]@{
         Host         = $conn.Host
@@ -804,7 +803,6 @@ echo "User \$NEWUSER created and configured."
         $newLoginWorks = $false
     }
 
-    # 4) Optionally harden sshd
     if (-not $newLoginWorks) {
         Write-Warn "New user login did not succeed. Root SSH hardening is NOT recommended."
         if (-not (Confirm "Proceed to harden sshd anyway (NOT recommended)?")) {
@@ -1070,7 +1068,6 @@ function Run-ExportPuTTYKey {
     Show-Banner
     Write-Host "Export to PuTTY Private Key (.ppk)"
 
-    # Select source OpenSSH key
     $source = Select-SSHKeyFile
     if (-not $source) {
         Write-Warn "No key selected."
@@ -1087,7 +1084,6 @@ function Run-ExportPuTTYKey {
     $initialDir = [System.IO.Path]::GetDirectoryName($source)
     $defaultName = [System.IO.Path]::GetFileName($defaultOut)
 
-    # Select destination .ppk (Save As)
     $dest = Select-SaveFilePath -Title "Save PuTTY private key (.ppk)" -DefaultFileName $defaultName -InitialDirectory $initialDir
     if (-not $dest) {
         Write-Warn "PuTTY export cancelled."
