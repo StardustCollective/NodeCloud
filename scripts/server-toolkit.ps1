@@ -973,3 +973,5 @@ function Continue-SetupAfterUserCreation {
     }
     $AppendLog.Invoke("Setup process complete.`r`n")
 }
+
+$null = $Window.ShowDialog()
