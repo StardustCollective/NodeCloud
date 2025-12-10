@@ -1245,13 +1245,14 @@ echo "Bootstrap complete for $NEWUSER."
         $tmpDir    = [System.IO.Path]::GetTempPath()
         $tmpScript = Join-Path $tmpDir ("server-toolkit-bootstrap-{0}-{1}.sh" -f $conn.Host, $newUser)
         Write-Info "Writing bootstrap script for '$newUser' to $tmpScript"
-        Set-Content -LiteralPath $tmpScript -Value $remoteScript -Encoding UTF8
+        Set-Content -LiteralPath $tmpScript -Value $remoteScript -Encoding ASCII
 
         $sshArgs = @()
         if ($conn.IdentityFile) {
             $sshArgs += "-i `"$($conn.IdentityFile)`""
         }
         $sshArgs += "-p $($conn.Port)"
+        $sshArgs += "-T"
         $sshArgs += "-o StrictHostKeyChecking=no"
         $sshArgs += "-o UserKnownHostsFile=`"$($Script:KnownHosts)`""
         $sshArgs += "$($conn.User)@$($conn.Host)"
