@@ -503,11 +503,18 @@ function Invoke-SshCommand {
         [string]$Command
     )
 
-    $args = @("-p", $Port)
+    $args = @(
+        "-p", $Port,
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=$($Script:KnownHosts)"
+    )
+
     if ($IdentityFile) {
         $args += @("-i", $IdentityFile)
     }
+
     $args += "$User@$HostName"
+
     if ($Command) {
         $args += $Command
     }
@@ -1164,11 +1171,14 @@ echo "User $NEWUSER created and configured."
         $profile = [ConnectionProfile]::new($pname,$conn.Host,$newUser,$conn.Port,$conn.IdentityFile)
         Save-SSHProfile -Profile $profile
         if (Show-Confirm "Do you want to launch an SSH session for '$newUser' now?" "Launch SSH" $false) {
-            $sshCmd = "ssh"
-            $args   = @()
-            if ($conn.IdentityFile) { $args += "-i `"$($conn.IdentityFile)`"" }
-            $args += "-p $($conn.Port) $newUser@$($conn.Host)"
-            Start-Process "powershell.exe" "-NoLogo -NoExit -Command $sshCmd $($args -join ' ')" | Out-Null
+            $sshArgs = @()
+            if ($conn.IdentityFile) { $sshArgs += "-i `"$($conn.IdentityFile)`"" }
+            $sshArgs += "-p $($conn.Port)"
+            $sshArgs += "$newUser@$($conn.Host)"
+
+            $cmdLine = "ssh " + ($sshArgs -join " ")
+            Write-Info "Launching interactive ssh session for new user in new console: $cmdLine"
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/k $cmdLine" | Out-Null
         }
     }
 }
@@ -1382,12 +1392,12 @@ function Run-ExportSSHProfile {
 
     $btnPanel = New-Object Windows.Controls.StackPanel
     $btnPanel.Orientation = "Horizontal"
-    $btnPanel.HorizontalAlignment = "Right"
-    $btnPanel.Margin = "0,12,0,0"
+    $btnPanel.HorizontalAlignment = "Center"
+    $btnPanel.Margin = "0,16,0,0"
 
     $btnCancel = New-Button -Content "Cancel"
-    $btnCancel.Width = 90
-    $btnCancel.Margin = "0,0,8,0"
+    $btnCancel.Width = 100
+    $btnCancel.Margin = "0,0,12,0"
     $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
 
     $btnOK = New-Button -Content "Save Profile"
@@ -1436,12 +1446,16 @@ function Run-ServerLogin {
         return
     }
 
-    $sshCmd = "ssh"
-    $args   = @()
-    if ($conn.IdentityFile) { $args += "-i `"$($conn.IdentityFile)`"" }
-    $args += "-p $($conn.Port) $($conn.User)@$($conn.Host)"
-    Write-Info "Launching interactive ssh session: $sshCmd $($args -join ' ')"
-    Start-Process "powershell.exe" "-NoLogo -NoExit -Command $sshCmd $($args -join ' ')" | Out-Null
+    $sshArgs = @()
+    if ($conn.IdentityFile) { $sshArgs += "-i `"$($conn.IdentityFile)`"" }
+    $sshArgs += "-p $($conn.Port)"
+    $sshArgs += "$($conn.User)@$($conn.Host)"
+
+    $cmdLine = "ssh " + ($sshArgs -join " ")
+    Write-Info "Launching interactive ssh session in new console: $cmdLine"
+
+    # Open a new cmd window and keep it open after ssh exits
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/k $cmdLine" | Out-Null
 }
 
 #endregion
