@@ -692,6 +692,10 @@ function Show-ConnectionDialog {
     Write-Info "Opening connection dialog for '$Purpose'."
 
     $win = New-Window -Title "Server Connection - $Purpose" -Width 480 -Height 380
+    $win.SizeToContent = 'Height'
+    $win.MaxHeight = 700
+    $win.ResizeMode = 'CanResize'
+
     $root = New-StackPanel -Orientation Vertical -Margin 16
 
     $title = New-Label -Text $Purpose -FontSize 16 -Bold $true
@@ -702,7 +706,6 @@ function Show-ConnectionDialog {
     $hint.Foreground = $Color_Text
     $root.Children.Add($hint) | Out-Null
 
-    # Grid for labels + controls
     $grid = New-Object Windows.Controls.Grid
     $grid.Margin = "0,8,0,0"
     for ($i=0; $i -lt 2; $i++) {
@@ -738,7 +741,6 @@ function Show-ConnectionDialog {
     $tbPort = New-TextBox -Text "22"
     Add-GridRow "SSH Port" $tbPort
 
-    # Identity file + browse button
     $spIdent = New-Object Windows.Controls.StackPanel
     $spIdent.Orientation = "Horizontal"
     $spIdent.Margin = "0,0,0,8"
@@ -810,7 +812,11 @@ function Show-ConnectionDialog {
     $btnPanel.Children.Add($btnOK) | Out-Null
     $root.Children.Add($btnPanel) | Out-Null
 
-    $win.Content = $root
+    $scroll = New-Object Windows.Controls.ScrollViewer
+    $scroll.VerticalScrollBarVisibility = 'Auto'
+    $scroll.Content = $root
+
+    $win.Content = $scroll
     $null = $win.ShowDialog()
 
     if (-not $win.DialogResult) {
@@ -841,7 +847,11 @@ function Select-ProfileFromDisk {
         return $null
     }
 
-    $win = New-Window -Title "Select Profile - $Purpose" -Width 480 -Height 360
+    $win = New-Window -Title "Select Profile - $Purpose" -Width 520 -Height 420
+    $win.SizeToContent = 'Height'
+    $win.MaxHeight = 700
+    $win.ResizeMode = 'CanResize'
+
     $root = New-StackPanel -Orientation Vertical -Margin 16
 
     $title = New-Label -Text "$Purpose - Select a stored connection profile:" -FontSize 16 -Bold $true
@@ -852,6 +862,8 @@ function Select-ProfileFromDisk {
     $lb.Margin = "0,8,0,8"
     $lb.Background = $Color_Panel
     $lb.Foreground = $Color_Text
+    $lb.MaxHeight = 260
+    [Windows.Controls.ScrollViewer]::SetVerticalScrollBarVisibility($lb, 'Auto')
 
     foreach ($p in $profiles) {
         $item = New-Object Windows.Controls.ListBoxItem
@@ -886,7 +898,11 @@ function Select-ProfileFromDisk {
     $btnPanel.Children.Add($btnOK) | Out-Null
     $root.Children.Add($btnPanel) | Out-Null
 
-    $win.Content = $root
+    $scroll = New-Object Windows.Controls.ScrollViewer
+    $scroll.VerticalScrollBarVisibility = 'Auto'
+    $scroll.Content = $root
+
+    $win.Content = $scroll
     $null = $win.ShowDialog()
 
     if (-not $win.DialogResult) {
