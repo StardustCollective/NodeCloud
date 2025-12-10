@@ -427,8 +427,7 @@ function Select-SSHKeyFile {
         $ofd.InitialDirectory = Join-Path $HOME ".ssh"
     }
 
-    # Bias toward common key filenames, but still allow all files
-    $ofd.Filter = "SSH Keys (*.pem;id_ed25519;id_rsa;id_ecdsa;id_dsa;*_key)|*.pem;id_ed25519;id_rsa;id_ecdsa;id_dsa;*_key|All Files (*.*)|*.*"
+    $ofd.Filter = "SSH Keys (*.pem;*.ppk;id_ed25519;id_rsa;id_ecdsa;id_dsa;*_key)|*.pem;*.ppk;id_ed25519;id_rsa;id_ecdsa;id_dsa;*_key|All Files (*.*)|*.*"
 
     while ($true) {
         if ($ofd.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
@@ -441,7 +440,6 @@ function Select-SSHKeyFile {
             continue
         }
 
-        # Check first line for a plausible private key header
         $firstLine = $null
         try {
             $firstLine = (Get-Content -Path $path -TotalCount 1 -ErrorAction Stop)
@@ -452,9 +450,51 @@ function Select-SSHKeyFile {
 
         if ($firstLine -match '-----BEGIN (OPENSSH|RSA|EC|DSA|ED25519) PRIVATE KEY-----') {
             return $path
-        } else {
-            Write-Warn "The selected file does not look like a supported SSH private key. Please choose another file."
         }
+
+        if ($firstLine -match '^PuTTY-User-Key-File-') {
+            Write-Info "Detected PuTTY private key (.ppk): $path"
+
+            $puttygen = Get-Command "puttygen.exe" -ErrorAction SilentlyContinue
+            if (-not $puttygen) {
+                Write-Err "puttygen.exe not found in PATH. Cannot convert PuTTY key to OpenSSH format."
+                Write-Warn "Please install PuTTY/puttygen or select a different key."
+                continue
+            }
+
+            if (-not (Confirm "Convert this PuTTY private key to OpenSSH format now?" $false)) {
+                Write-Warn "PuTTY key conversion cancelled. Please select another key."
+                continue
+            }
+
+            $dir      = [System.IO.Path]::GetDirectoryName($path)
+            $base     = [System.IO.Path]::GetFileNameWithoutExtension($path)
+            $defaultOut = [System.IO.Path]::Combine($dir, "$base-openssh-key.pem")
+
+            $dest = Select-SaveFilePath -Title "Save converted OpenSSH private key" -DefaultFileName ([System.IO.Path]::GetFileName($defaultOut)) -InitialDirectory $dir
+            if (-not $dest) {
+                Write-Warn "PuTTY key conversion cancelled. Please select another key."
+                continue
+            }
+
+            if (Test-Path $dest) {
+                if (-not (Confirm "File '$dest' already exists. Overwrite?" $true)) {
+                    Write-Warn "Not overwriting existing key. Please choose a different filename."
+                    continue
+                }
+            }
+
+            & $puttygen.Source $path "-O" "private-openssh" "-o" $dest
+            if ($LASTEXITCODE -eq 0) {
+                Write-Ok "Converted PuTTY key saved to: $dest"
+                return $dest
+            } else {
+                Write-Err "PuTTY key conversion failed. Please try again or select another key."
+                continue
+            }
+        }
+
+        Write-Warn "The selected file does not look like a supported SSH private key. Please choose another file."
     }
 }
 
