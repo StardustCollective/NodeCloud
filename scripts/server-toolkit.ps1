@@ -1,12 +1,6 @@
 <# 
     server-toolkit.ps1
     Stardust Collective - Server Setup Toolkit (Windows Edition, GUI)
-
-    - Dark theme & accent colors inspired by NodeCloud GUI
-    - Full GUI flow (main menu + connection dialog + profile picker)
-    - Connection profiles in:  $HOME\.ssh\{ProfileName}_ssh_config.txt
-    - Debug log:               $HOME\server_setup.log
-    - PuTTY .ppk support via PuTTYgen (if available / installable)
 #>
 
 Set-StrictMode -Version Latest
@@ -26,7 +20,7 @@ if (-not (Test-Path $Script:KnownHosts)) {
     New-Item -ItemType File -Path $Script:KnownHosts -Force | Out-Null
 }
 
-# NodeCloud-inspired colors
+# colors
 $Script:Color_Background   = "#2b2b2b"
 $Script:Color_Text         = "#ffffff"
 $Script:Color_Panel        = "#3c3f41"
@@ -1450,7 +1444,7 @@ function Show-MainWindow {
     $title.Foreground = $Color_Accent
     $root.Children.Add($title) | Out-Null
 
-    $subtitle = New-Label -Text "NodeCloud-style GUI for server setup, users, and P12 handling."
+    $subtitle = New-Label -Text "Node server preperation - Brought to you by @Proph151Music"
     $root.Children.Add($subtitle) | Out-Null
 
     $btnNewServer     = New-Button -Content "New Server Setup"
