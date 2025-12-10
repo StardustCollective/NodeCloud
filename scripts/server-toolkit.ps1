@@ -259,10 +259,10 @@ function Get-StoredProfiles {
             continue
         }
 
-        $name = ($hostLine -replace '^\s*Host\s+', '').Trim()
-        $host = ($hostNameLine -replace '^\s*HostName\s+', '').Trim()
-        $user = ($userLine -replace '^\s*User\s+', '').Trim()
-        $port = "22"
+        $name          = ($hostLine     -replace '^\s*Host\s+', '').Trim()
+        $hostNameValue = ($hostNameLine -replace '^\s*HostName\s+', '').Trim()
+        $user          = ($userLine     -replace '^\s*User\s+', '').Trim()
+        $port          = "22"
         if ($portLine) {
             $port = ($portLine -replace '^\s*Port\s+', '').Trim()
         }
@@ -271,14 +271,13 @@ function Get-StoredProfiles {
             $identity = ($identLine -replace '^\s*IdentityFile\s+', '').Trim()
         }
 
-        $profiles += [ConnectionProfile]::new($name,$host,$user,$port,$identity)
+        $profiles += [ConnectionProfile]::new($name,$hostNameValue,$user,$port,$identity)
     }
 
     $profiles = $profiles | Sort-Object Name
     Write-Info "Found $($profiles.Count) stored profile(s)."
     return $profiles
 }
-
 function Save-SSHProfile {
     param(
         [ConnectionProfile]$Profile
@@ -491,14 +490,13 @@ function Select-P12File {
 #region SSH helpers (ssh, scp, host-key cleanup)
 
 function Prepare-HostKey {
-    param([string]$Host)
-    # We lazily clean on mismatch; but this can be used for proactive host-key checks if desired.
-    Write-Info "Prepare-HostKey called for host: $Host"
+    param([string]$HostName)
+    Write-Info "Prepare-HostKey called for host: $HostName"
 }
 
 function Invoke-SshCommand {
     param(
-        [string]$Host,
+        [string]$HostName,
         [string]$User,
         [string]$Port = "22",
         [string]$IdentityFile,
@@ -509,7 +507,7 @@ function Invoke-SshCommand {
     if ($IdentityFile) {
         $args += @("-i", $IdentityFile)
     }
-    $args += "$User@$Host"
+    $args += "$User@$HostName"
     if ($Command) {
         $args += $Command
     }
@@ -533,11 +531,11 @@ function Invoke-SshCommand {
     $p.WaitForExit()
 
     if ($stderr -match "REMOTE HOST IDENTIFICATION HAS CHANGED") {
-        Write-Warn "Host key mismatch detected for $Host. Cleaning known_hosts entry and retrying."
+        Write-Warn "Host key mismatch detected for $HostName. Cleaning known_hosts entry and retrying."
         try {
-            & ssh-keygen -R $Host | Out-Null
+            & ssh-keygen -R $HostName | Out-Null
         } catch {
-            Write-ErrorLog ("ssh-keygen -R failed for host {0}: {1}" -f $Host, $_)
+            Write-ErrorLog ("ssh-keygen -R failed for host {0}: {1}" -f $HostName, $_)
         }
 
         # retry once
@@ -550,7 +548,7 @@ function Invoke-SshCommand {
     }
 
     if ($stderr) {
-        Write-Warn ("ssh stderr for {0}: {1}" -f $Host, $stderr)
+        Write-Warn ("ssh stderr for {0}: {1}" -f $HostName, $stderr)
     }
 
     return [PSCustomObject]@{
@@ -562,7 +560,7 @@ function Invoke-SshCommand {
 
 function Invoke-ScpDownload {
     param(
-        [string]$Host,
+        [string]$HostName,
         [string]$User,
         [string]$Port = "22",
         [string]$IdentityFile,
@@ -574,7 +572,7 @@ function Invoke-ScpDownload {
     if ($IdentityFile) {
         $args += @("-i", $IdentityFile)
     }
-    $args += "$User@$($Host):`"$RemotePath`""
+    $args += "$User@$($HostName):`"$RemotePath`""
     $args += "`"$LocalPath`""
 
     Write-Info "Running scp download: scp $($args -join ' ')"
@@ -595,11 +593,11 @@ function Invoke-ScpDownload {
     $p.WaitForExit()
 
     if ($stderr -match "REMOTE HOST IDENTIFICATION HAS CHANGED") {
-        Write-Warn "Host key mismatch for $Host during scp. Cleaning known_hosts and retrying."
+        Write-Warn "Host key mismatch for $HostName during scp. Cleaning known_hosts and retrying."
         try {
-            & ssh-keygen -R $Host | Out-Null
+            & ssh-keygen -R $HostName | Out-Null
         } catch {
-            Write-ErrorLog ("ssh-keygen -R failed for host {0}: {1}" -f $Host, $_)
+            Write-ErrorLog ("ssh-keygen -R failed for host {0}: {1}" -f $HostName, $_)
         }
 
         $p = New-Object System.Diagnostics.Process
@@ -623,7 +621,7 @@ function Invoke-ScpDownload {
 
 function Invoke-ScpUpload {
     param(
-        [string]$Host,
+        [string]$HostName,
         [string]$User,
         [string]$Port = "22",
         [string]$IdentityFile,
@@ -636,7 +634,7 @@ function Invoke-ScpUpload {
         $args += @("-i", $IdentityFile)
     }
     $args += "`"$LocalPath`""
-    $args += "$User@$($Host):`"$RemotePath`""
+    $args += "$User@$($HostName):`"$RemotePath`""
 
     Write-Info "Running scp upload: scp $($args -join ' ')"
 
@@ -656,11 +654,11 @@ function Invoke-ScpUpload {
     $p.WaitForExit()
 
     if ($stderr -match "REMOTE HOST IDENTIFICATION HAS CHANGED") {
-        Write-Warn "Host key mismatch for $Host during scp. Cleaning known_hosts and retrying."
+        Write-Warn "Host key mismatch for $HostName during scp. Cleaning known_hosts and retrying."
         try {
-            & ssh-keygen -R $Host | Out-Null
+            & ssh-keygen -R $HostName | Out-Null
         } catch {
-            Write-ErrorLog ("ssh-keygen -R failed for host {0}: {1}" -f $Host, $_)
+            Write-ErrorLog ("ssh-keygen -R failed for host {0}: {1}" -f $HostName, $_)
         }
 
         $p = New-Object System.Diagnostics.Process
@@ -1135,7 +1133,7 @@ echo "User $NEWUSER created and configured."
 '@ -f $newUser, $pass
 
     $cmd = "bash -s"
-    $res = Invoke-SshCommand -Host $conn.Host -User $conn.User -Port $conn.Port -IdentityFile $conn.IdentityFile -Command $cmd
+    $res = Invoke-SshCommand -HostName $conn.Host -User $conn.User -Port $conn.Port -IdentityFile $conn.IdentityFile -Command $cmd
     if ($res.ExitCode -ne 0) {
         Show-MessageBoxError "Remote user creation script failed:`n$res.StdErr" "New Server Setup"
         return
@@ -1174,7 +1172,7 @@ function Run-BackupP12 {
     }
 
     $remoteFind = "cd ~; find . -maxdepth 5 -type f -name '*.p12' ! -path '*\/hash\/*' ! -path '*\/ordinal\/*'"
-    $res = Invoke-SshCommand -Host $conn.Host -User $conn.User -Port $conn.Port -IdentityFile $conn.IdentityFile -Command $remoteFind
+    $res = Invoke-SshCommand -HostName $conn.Host -User $conn.User -Port $conn.Port -IdentityFile $conn.IdentityFile -Command $remoteFind
     if ($res.ExitCode -ne 0 -or -not $res.StdOut.Trim()) {
         Show-MessageBoxWarn "No .p12 files found on the remote server." "Backup P12"
         return
@@ -1235,7 +1233,7 @@ function Run-BackupP12 {
     }
     $localPath = Join-Path $localDir ([System.IO.Path]::GetFileName($selectedPath))
 
-    $res2 = Invoke-ScpDownload -Host $conn.Host -User $conn.User -Port $conn.Port -IdentityFile $conn.IdentityFile -RemotePath $selectedPath -LocalPath $localPath
+    $res2 = Invoke-ScpDownload -HostName $conn.Host -User $conn.User -Port $conn.Port -IdentityFile $conn.IdentityFile -RemotePath $selectedPath -LocalPath $localPath
     if ($res2.ExitCode -ne 0) {
         Show-MessageBoxError "Failed to download .p12 file:`n$res2.StdErr" "Backup P12"
         return
@@ -1297,7 +1295,7 @@ function Run-UploadP12 {
         return
     }
 
-    $res = Invoke-ScpUpload -Host $conn.Host -User $conn.User -Port $conn.Port -IdentityFile $conn.IdentityFile -LocalPath $p12 -RemotePath "~/"
+    $res = Invoke-ScpUpload -HostName $conn.Host -User $conn.User -Port $conn.Port -IdentityFile $conn.IdentityFile -LocalPath $p12 -RemotePath "~/"
     if ($res.ExitCode -ne 0) {
         Show-MessageBoxError "Failed to upload P12 file:`n$res.StdErr" "Upload P12"
         return
