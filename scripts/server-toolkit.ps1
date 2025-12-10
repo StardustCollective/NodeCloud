@@ -7,7 +7,89 @@ Add-Type -AssemblyName System.Xaml
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Server Toolkit" Height="500" Width="600" WindowStartupLocation="CenterScreen"
-        ResizeMode="CanResize">
+        ResizeMode="CanResize"
+        Background="#2b2b2b"
+        Foreground="White"
+        FontFamily="Segoe UI">
+    <Window.Resources>
+        <!-- Panel + background brushes -->
+        <SolidColorBrush x:Key="PanelBrush" Color="#3c3f41" />
+        <SolidColorBrush x:Key="ButtonBrush" Color="#1284b6" />
+        <SolidColorBrush x:Key="ButtonHoverBrush" Color="#13628b" />
+        <SolidColorBrush x:Key="BorderBrush" Color="#5c5c5c" />
+
+        <!-- GroupBox styling -->
+        <Style TargetType="GroupBox">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#555555" />
+        </Style>
+
+        <!-- TextBox styling -->
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="4" />
+        </Style>
+
+        <!-- PasswordBox styling -->
+        <Style TargetType="PasswordBox">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="4" />
+        </Style>
+
+        <!-- Button styling -->
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource ButtonBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8,2" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="2">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{StaticResource ButtonHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Menu / MenuItem styling (basic) -->
+        <Style TargetType="Menu">
+            <Setter Property="Background" Value="#333333" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style TargetType="MenuItem">
+            <Setter Property="Background" Value="#333333" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="#444444" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
     <DockPanel LastChildFill="True">
         <!-- Menu bar -->
         <Menu DockPanel.Dock="Top">
