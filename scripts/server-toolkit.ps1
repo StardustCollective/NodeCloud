@@ -538,7 +538,7 @@ $StartButton.Add_Click({
         $AppendLog.Invoke("[WARN] Host key has changed! Removing old key from registry...`r`n")
         try {
             $reg = Get-Item $regPath -ErrorAction Stop
-            $propsToRemove = $reg.Property | Where-Object { $_ -like "*@$port:$host" }
+            $propsToRemove = $reg.Property | Where-Object { $_ -like $targetKeyPrefix }
             foreach ($prop in $propsToRemove) {
                 Remove-ItemProperty -Path $regPath -Name $prop -ErrorAction SilentlyContinue
             }
@@ -646,7 +646,7 @@ $StartButton.Add_Click({
         $AppendLog.Invoke("Setting password for '$newUser'...`r`n")
         # Note: send newuser:password to chpasswd
         $escapedPair = "$newUser`:$newPass"
-$exitCode = Run-RemoteCommand -cmd "bash -c `"echo '$escapedPair' | chpasswd`""
+        $exitCode = Run-RemoteCommand -cmd "bash -c `"echo '$escapedPair' | chpasswd`""
         if ($exitCode -ne 0) {
             $AppendLog.Invoke("[ERROR] Failed to set password for $newUser. (Exit code $exitCode)`r`n")
             # Not critical enough to abort; continue without password
@@ -661,9 +661,9 @@ $exitCode = Run-RemoteCommand -cmd "bash -c `"echo '$escapedPair' | chpasswd`""
     $AppendLog.Invoke("Copying authorized_keys to '$newUser'...`r`n")
     # Ensure .ssh directory and copy key file
     # We'll do: mkdir .ssh, copy file if exists, set perms
-    $cmdCopy = "bash -c 'mkdir -p /home/$newUser/.ssh && "
-    $cmdCopy += "if [ -f ~/.ssh/authorized_keys ]; then cp ~/.ssh/authorized_keys /home/$newUser/.ssh/authorized_keys && chmod 600 /home/$newUser/.ssh/authorized_keys; else echo \"NO_AUTH_KEYS\"; fi && "
-    $cmdCopy += "chown -R $newUser:$newUser /home/$newUser/.ssh && chmod 700 /home/$newUser/.ssh'"
+    $cmdCopy = 'bash -c ''mkdir -p /home/' + $newUser + '/.ssh && ' +
+        'if [ -f ~/.ssh/authorized_keys ]; then cp ~/.ssh/authorized_keys /home/' + $newUser + '/.ssh/authorized_keys && chmod 600 /home/' + $newUser + '/.ssh/authorized_keys; else echo "NO_AUTH_KEYS"; fi && ' +
+        'chown -R ' + $newUser + ':' + $newUser + ' /home/' + $newUser + '/.ssh && chmod 700 /home/' + $newUser + '/.ssh'''
     $exitCode = Run-RemoteCommand -cmd $cmdCopy
     if ($exitCode -ne 0) {
         if ($LogBox.Text.Contains("NO_AUTH_KEYS")) {
@@ -872,18 +872,20 @@ function Continue-SetupAfterUserCreation {
     $newPass = $NewPasswordBox.Password
     if (-not [string]::IsNullOrEmpty($newPass)) {
         $AppendLog.Invoke("Setting password for '$newUser'...`r`n")
-        $exitCode = Run-RemoteCommand -cmd "bash -c `"echo '$newUser:$newPass' | chpasswd`""
+        $pair = "$newUser`:$newPass"
+        $exitCode = Run-RemoteCommand -cmd "bash -c `"echo '$pair' | chpasswd`""
         if ($exitCode -ne 0) {
             $AppendLog.Invoke("[ERROR] Failed to set password for $newUser.`r`n")
         } else {
             $AppendLog.Invoke("Password set for '$newUser'.`r`n")
         }
     }
+
     # Copy authorized_keys
     $AppendLog.Invoke("Copying authorized_keys to '$newUser'...`r`n")
-    $cmdCopy = "bash -c 'mkdir -p /home/$newUser/.ssh && "
-    $cmdCopy += "if [ -f ~/.ssh/authorized_keys ]; then cp ~/.ssh/authorized_keys /home/$newUser/.ssh/authorized_keys && chmod 600 /home/$newUser/.ssh/authorized_keys; else echo \"NO_AUTH_KEYS\"; fi && "
-    $cmdCopy += "chown -R $newUser:$newUser /home/$newUser/.ssh && chmod 700 /home/$newUser/.ssh'"
+    $cmdCopy = 'bash -c ''mkdir -p /home/' + $newUser + '/.ssh && ' +
+    'if [ -f ~/.ssh/authorized_keys ]; then cp ~/.ssh/authorized_keys /home/' + $newUser + '/.ssh/authorized_keys && chmod 600 /home/' + $newUser + '/.ssh/authorized_keys; else echo "NO_AUTH_KEYS"; fi && ' +
+    'chown -R ' + $newUser + ':' + $newUser + ' /home/' + $newUser + '/.ssh && chmod 700 /home/' + $newUser + '/.ssh'''
     $exitCode = Run-RemoteCommand -cmd $cmdCopy
     if ($exitCode -ne 0) {
         if ($LogBox.Text.Contains("NO_AUTH_KEYS")) {
