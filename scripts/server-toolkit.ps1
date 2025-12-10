@@ -8,60 +8,96 @@ Add-Type -AssemblyName System.Xaml
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Server Toolkit" Height="500" Width="600" WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
-        Background="#2b2b2b"
-        Foreground="White"
+        Background="#1e1f22"
+        Foreground="#f0f0f0"
         FontFamily="Segoe UI">
     <Window.Resources>
-        <!-- Panel + background brushes -->
-        <SolidColorBrush x:Key="PanelBrush" Color="#3c3f41" />
-        <SolidColorBrush x:Key="ButtonBrush" Color="#1284b6" />
-        <SolidColorBrush x:Key="ButtonHoverBrush" Color="#13628b" />
-        <SolidColorBrush x:Key="BorderBrush" Color="#5c5c5c" />
+        <!-- Base palette similar to NodeCloud -->
+        <SolidColorBrush x:Key="WindowBg" Color="#1e1f22" />
+        <SolidColorBrush x:Key="PanelBg" Color="#25272b" />
+        <SolidColorBrush x:Key="InputBg" Color="#2f3238" />
+        <SolidColorBrush x:Key="InputBorder" Color="#4a4f5a" />
+        <SolidColorBrush x:Key="InputBorderFocused" Color="#00a8ff" />
+        <SolidColorBrush x:Key="LabelFg" Color="#d0d0d0" />
+        <SolidColorBrush x:Key="TextFg" Color="#f0f0f0" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#00a8ff" />
+        <SolidColorBrush x:Key="ButtonBg" Color="#00a8ff" />
+        <SolidColorBrush x:Key="ButtonBgHover" Color="#14b5ff" />
+        <SolidColorBrush x:Key="ButtonBgPressed" Color="#0090d0" />
+        <SolidColorBrush x:Key="BorderBrushDark" Color="#3b3f46" />
 
-        <!-- GroupBox styling -->
+        <!-- Labels / text -->
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource LabelFg}" />
+        </Style>
+        <Style TargetType="Label">
+            <Setter Property="Foreground" Value="{StaticResource LabelFg}" />
+            <Setter Property="Margin" Value="0,0,4,4" />
+        </Style>
+
+        <!-- GroupBox = panels -->
         <Style TargetType="GroupBox">
-            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="BorderBrush" Value="#555555" />
+            <Setter Property="Background" Value="{StaticResource PanelBg}" />
+            <Setter Property="Foreground" Value="{StaticResource TextFg}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushDark}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10" />
+            <Setter Property="Margin" Value="0,0,0,12" />
         </Style>
 
-        <!-- TextBox styling -->
+        <!-- Inputs -->
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="Background" Value="{StaticResource InputBg}" />
+            <Setter Property="Foreground" Value="{StaticResource TextFg}" />
+            <Setter Property="BorderBrush" Value="{StaticResource InputBorder}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="4" />
+            <Setter Property="Padding" Value="4,2" />
         </Style>
 
-        <!-- PasswordBox styling -->
         <Style TargetType="PasswordBox">
-            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="Background" Value="{StaticResource InputBg}" />
+            <Setter Property="Foreground" Value="{StaticResource TextFg}" />
+            <Setter Property="BorderBrush" Value="{StaticResource InputBorder}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="4" />
+            <Setter Property="Padding" Value="4,2" />
         </Style>
 
-        <!-- Button styling -->
+        <!-- Highlight focused fields with teal border -->
+        <Style TargetType="Control" x:Key="InputFocusBase">
+            <Style.Triggers>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource InputBorderFocused}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Merge focus style into TextBox / PasswordBox -->
+        <Style TargetType="TextBox" BasedOn="{StaticResource InputFocusBase}" />
+        <Style TargetType="PasswordBox" BasedOn="{StaticResource InputFocusBase}" />
+
+        <!-- Buttons -->
         <Style TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource ButtonBrush}" />
+            <Setter Property="Background" Value="{StaticResource ButtonBg}" />
             <Setter Property="Foreground" Value="White" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="8,2" />
-            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border Background="{TemplateBinding Background}"
-                                CornerRadius="2">
+                                CornerRadius="3">
                             <ContentPresenter HorizontalAlignment="Center"
-                                              VerticalAlignment="Center" />
+                                              VerticalAlignment="Center"
+                                              Margin="4,1"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="{StaticResource ButtonHoverBrush}" />
+                                <Setter Property="Background" Value="{StaticResource ButtonBgHover}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="{StaticResource ButtonBgPressed}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.4" />
@@ -72,19 +108,18 @@ Add-Type -AssemblyName System.Xaml
             </Setter>
         </Style>
 
-        <!-- Menu / MenuItem styling (basic) -->
+        <!-- Menu -->
         <Style TargetType="Menu">
-            <Setter Property="Background" Value="#333333" />
-            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="#262a30" />
+            <Setter Property="Foreground" Value="{StaticResource TextFg}" />
         </Style>
         <Style TargetType="MenuItem">
-            <Setter Property="Background" Value="#333333" />
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="Padding" Value="6,2" />
-            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="#262a30" />
+            <Setter Property="Foreground" Value="{StaticResource TextFg}" />
+            <Setter Property="Padding" Value="8,2" />
             <Style.Triggers>
                 <Trigger Property="IsHighlighted" Value="True">
-                    <Setter Property="Background" Value="#444444" />
+                    <Setter Property="Background" Value="#333842" />
                 </Trigger>
             </Style.Triggers>
         </Style>
