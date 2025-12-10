@@ -173,7 +173,7 @@ function Show-MessageBoxInfo {
         [string]$Message,
         [string]$Title = "Server Toolkit"
     )
-    Write-Info "$Title: $Message"
+    Write-Info "$($Title): $Message"
     [Windows.MessageBox]::Show($Message, $Title, 'OK', 'Information') | Out-Null
 }
 
@@ -182,7 +182,7 @@ function Show-MessageBoxWarn {
         [string]$Message,
         [string]$Title = "Server Toolkit"
     )
-    Write-Warn "$Title: $Message"
+    Write-Warn "$($Title): $Message"
     [Windows.MessageBox]::Show($Message, $Title, 'OK', 'Warning') | Out-Null
 }
 
@@ -191,7 +191,7 @@ function Show-MessageBoxError {
         [string]$Message,
         [string]$Title = "Server Toolkit"
     )
-    Write-ErrorLog "$Title: $Message"
+    Write-ErrorLog "$($Title): $Message"
     [Windows.MessageBox]::Show($Message, $Title, 'OK', 'Error') | Out-Null
 }
 
@@ -543,7 +543,7 @@ function Invoke-SshCommand {
         try {
             & ssh-keygen -R $Host | Out-Null
         } catch {
-            Write-ErrorLog "ssh-keygen -R failed for host $Host: $_"
+            Write-ErrorLog ("ssh-keygen -R failed for host {0}: {1}" -f $Host, $_)
         }
 
         # retry once
@@ -556,7 +556,7 @@ function Invoke-SshCommand {
     }
 
     if ($stderr) {
-        Write-Warn "ssh stderr for $Host: $stderr"
+        Write-Warn ("ssh stderr for {0}: {1}" -f $Host, $stderr)
     }
 
     return [PSCustomObject]@{
@@ -580,7 +580,7 @@ function Invoke-ScpDownload {
     if ($IdentityFile) {
         $args += @("-i", $IdentityFile)
     }
-    $args += "$User@$Host:`"$RemotePath`""
+    $args += "$User@$($Host):`"$RemotePath`""
     $args += "`"$LocalPath`""
 
     Write-Info "Running scp download: scp $($args -join ' ')"
@@ -605,7 +605,7 @@ function Invoke-ScpDownload {
         try {
             & ssh-keygen -R $Host | Out-Null
         } catch {
-            Write-ErrorLog "ssh-keygen -R failed for host $Host: $_"
+            Write-ErrorLog ("ssh-keygen -R failed for host {0}: {1}" -f $Host, $_)
         }
 
         $p = New-Object System.Diagnostics.Process
@@ -642,7 +642,7 @@ function Invoke-ScpUpload {
         $args += @("-i", $IdentityFile)
     }
     $args += "`"$LocalPath`""
-    $args += "$User@$Host:`"$RemotePath`""
+    $args += "$User@$($Host):`"$RemotePath`""
 
     Write-Info "Running scp upload: scp $($args -join ' ')"
 
@@ -666,7 +666,7 @@ function Invoke-ScpUpload {
         try {
             & ssh-keygen -R $Host | Out-Null
         } catch {
-            Write-ErrorLog "ssh-keygen -R failed for host $Host: $_"
+            Write-ErrorLog ("ssh-keygen -R failed for host {0}: {1}" -f $Host, $_)
         }
 
         $p = New-Object System.Diagnostics.Process
@@ -1113,7 +1113,7 @@ else
   exit 1
 fi
 
-echo "\$NEWUSER:$pass" | chpasswd
+echo "$($newUser):$($pass)" | chpasswd
 
 if getent group sudo >/dev/null 2>&1; then
   usermod -aG sudo "\$NEWUSER"
