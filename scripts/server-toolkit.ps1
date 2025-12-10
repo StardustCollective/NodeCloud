@@ -490,8 +490,36 @@ function Select-P12File {
 #region SSH helpers (ssh, scp, host-key cleanup)
 
 function Prepare-HostKey {
-    param([string]$HostName)
-    Write-Info "Prepare-HostKey called for host: $HostName"
+    param(
+        [string]$HostName,
+        [string]$Port = "22"
+    )
+
+    Write-Info "Prepare-HostKey called for host: $HostName (port $Port)"
+
+    try {
+        Write-Info "Removing stale host keys for $HostName from known_hosts (if any)."
+        & ssh-keygen -R $HostName       2>$null | Out-Null
+        & ssh-keygen -R "[$HostName]:$Port" 2>$null | Out-Null
+    } catch {
+        Write-ErrorLog ("ssh-keygen -R failed for host {0}: {1}" -f $HostName, $_)
+    }
+
+    try {
+        Write-Info "Running ssh-keyscan for $HostName:$Port"
+        $scan = & ssh-keyscan -p $Port $HostName 2>$null
+        if ($scan) {
+            if (-not (Test-Path $Script:KnownHosts)) {
+                New-Item -ItemType File -Path $Script:KnownHosts -Force | Out-Null
+            }
+            $scan | Add-Content -Path $Script:KnownHosts
+            Write-Info "Updated known_hosts entry for $HostName."
+        } else {
+            Write-Warn "ssh-keyscan returned no data for $HostName; known_hosts will be updated on first real ssh connection."
+        }
+    } catch {
+        Write-ErrorLog ("ssh-keyscan failed for host {0}: {1}" -f $HostName, $_)
+    }
 }
 
 function Invoke-SshCommand {
@@ -1017,36 +1045,21 @@ function Prompt-Connection {
         return $null
     }
 
-    if ($conn.Name) {
-        $profile = [ConnectionProfile]::new($conn.Name,$conn.Host,$conn.User,$conn.Port,$conn.IdentityFile)
-        Save-SSHProfile -Profile $profile
-
-        # Attach the password only in memory; do NOT persist it to disk
-        if ($conn.PSObject.Properties.Match('Password').Count -gt 0 -and $conn.Password) {
-            $profile | Add-Member -NotePropertyName Password -NotePropertyValue $conn.Password -Force
-        }
-
-        $CachedConn.Value = $profile
-        Prepare-HostKey $profile.Host
-        return $profile
-    } else {
-        $obj = [PSCustomObject]@{
-            Name         = ""
-            Host         = $conn.Host
-            User         = $conn.User
-            Port         = $conn.Port
-            IdentityFile = $conn.IdentityFile
-        }
-
-        # Keep the password in memory for this session only
-        if ($conn.PSObject.Properties.Match('Password').Count -gt 0 -and $conn.Password) {
-            $obj | Add-Member -NotePropertyName Password -NotePropertyValue $conn.Password -Force
-        }
-
-        $CachedConn.Value = $obj
-        Prepare-HostKey $obj.Host
-        return $obj
+    $obj = [PSCustomObject]@{
+        Name         = $conn.Name
+        Host         = $conn.Host
+        User         = $conn.User
+        Port         = $conn.Port
+        IdentityFile = $conn.IdentityFile
     }
+
+    if ($conn.PSObject.Properties.Match('Password').Count -gt 0 -and $conn.Password) {
+        $obj | Add-Member -NotePropertyName Password -NotePropertyValue $conn.Password -Force
+    }
+
+    $CachedConn.Value = $obj
+    Prepare-HostKey $obj.Host
+    return $obj
 }
 
 #endregion
@@ -1069,14 +1082,71 @@ function Test-P12Password {
     $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $cmd" -PassThru -WindowStyle Hidden -Wait
     if ($proc.ExitCode -eq 0) { return $true }
 
-    # try legacy mode
     $cmd2 = "echo `"`" | openssl pkcs12 -in `"$P12Path`" -legacy -nokeys -passin pass:`"$Password`" -passout pass:`"dummy`""
     Write-Info "Testing P12 password (legacy) via: $cmd2"
     $proc2 = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $cmd2" -PassThru -WindowStyle Hidden -Wait
     return ($proc2.ExitCode -eq 0)
 }
 
-#endregion
+function Harden-SSHRoot {
+    param(
+        [string]$HostName,
+        [string]$Port = "22",
+        [string]$User,
+        [string]$IdentityFile
+    )
+
+    Write-Info "Harden-SSHRoot invoked for $User@$HostName:$Port"
+
+    $hardenScript = @'
+set -e
+
+SSHD_CONFIG="/etc/ssh/sshd_config"
+TS=$(date +%Y%m%d%H%M%S)
+BACKUP="/etc/ssh/sshd_config.stardust_backup_${TS}"
+
+if [ ! -f "$SSHD_CONFIG" ]; then
+  echo "sshd_config not found at $SSHD_CONFIG"
+  exit 1
+fi
+
+cp "$SSHD_CONFIG" "$BACKUP"
+
+if grep -qE '^[#[:space:]]*PermitRootLogin' "$SSHD_CONFIG"; then
+  sed -i 's/^[#[:space:]]*PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONFIG"
+else
+  echo "" >> "$SSHD_CONFIG"
+  echo "PermitRootLogin no" >> "$SSHD_CONFIG"
+fi
+
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null
+else
+  service sshd restart 2>/dev/null || service ssh restart 2>/dev/null || /etc/init.d/ssh restart 2>/dev/null || true
+fi
+
+echo "Root SSH login disabled. Backup saved to $BACKUP"
+'@
+
+    $cmd = "sudo bash -s"
+    $res = Invoke-SshCommand `
+        -HostName    $HostName `
+        -User        $User `
+        -Port        $Port `
+        -IdentityFile $IdentityFile `
+        -Command     $cmd `
+        -InputData   $hardenScript `
+        -TimeoutMs   120000
+
+    if ($res.ExitCode -ne 0) {
+        $msg = "Failed to harden sshd on $HostName.`nExitCode: $($res.ExitCode)`nError: $($res.StdErr)"
+        Write-ErrorLog $msg
+        Show-MessageBoxError $msg "Disable Root SSH"
+    } else {
+        Write-Info "Harden-SSHRoot success output: $($res.StdOut)"
+        Show-MessageBoxInfo "Root SSH login disabled on $HostName.`n`n$($res.StdOut)" "Disable Root SSH"
+    }
+}
 
 function Run-NewServerSetup {
     Write-Info "Run-NewServerSetup invoked."
@@ -1288,7 +1358,6 @@ echo "Bootstrap complete for $NEWUSER."
     Write-Info "Remote user script output: $($res.StdOut)"
     Show-MessageBoxInfo "New user '$newUser' created on $($conn.Host)." "New Server Setup"
 
-    # optional: ask to export profile & test login
     if (Show-Confirm "Do you want to save an SSH profile for '$newUser' now?" "New User Profile" $true) {
         $pname = "$($conn.Host)-$newUser"
         $profile = [ConnectionProfile]::new($pname,$conn.Host,$newUser,$conn.Port,$conn.IdentityFile)
@@ -1303,6 +1372,10 @@ echo "Bootstrap complete for $NEWUSER."
             Write-Info "Launching interactive ssh session for new user in new console: $cmdLine"
             Start-Process -FilePath "cmd.exe" -ArgumentList "/k $cmdLine" | Out-Null
         }
+    }
+
+    if (Show-Confirm "Do you want to disable SSH root login on $($conn.Host) now?`n`nThis will use 'sudo' as '$newUser' to update sshd_config." "Disable Root SSH" $false) {
+        Harden-SSHRoot -HostName $conn.Host -Port $conn.Port -User $newUser -IdentityFile $conn.IdentityFile
     }
 }
 
