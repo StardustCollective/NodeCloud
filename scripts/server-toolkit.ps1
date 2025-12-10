@@ -1020,6 +1020,12 @@ function Prompt-Connection {
     if ($conn.Name) {
         $profile = [ConnectionProfile]::new($conn.Name,$conn.Host,$conn.User,$conn.Port,$conn.IdentityFile)
         Save-SSHProfile -Profile $profile
+
+        # Attach the password only in memory; do NOT persist it to disk
+        if ($conn.PSObject.Properties.Match('Password').Count -gt 0 -and $conn.Password) {
+            $profile | Add-Member -NotePropertyName Password -NotePropertyValue $conn.Password -Force
+        }
+
         $CachedConn.Value = $profile
         Prepare-HostKey $profile.Host
         return $profile
@@ -1031,6 +1037,12 @@ function Prompt-Connection {
             Port         = $conn.Port
             IdentityFile = $conn.IdentityFile
         }
+
+        # Keep the password in memory for this session only
+        if ($conn.PSObject.Properties.Match('Password').Count -gt 0 -and $conn.Password) {
+            $obj | Add-Member -NotePropertyName Password -NotePropertyValue $conn.Password -Force
+        }
+
         $CachedConn.Value = $obj
         Prepare-HostKey $obj.Host
         return $obj
@@ -1065,6 +1077,136 @@ function Test-P12Password {
 }
 
 #endregion
+
+function Bootstrap-InteractiveRootSetup {
+    param(
+        [string]$HostName,
+        [string]$Port,
+        [string]$User,
+        [string]$NewUser,
+        [string]$IdentityFile,
+        [string]$RootPassword
+    )
+
+    Write-Info "Interactive bootstrap requested for $User@$HostName to create '$NewUser'."
+
+    $msg = @"
+An SSH window will open and the toolkit will fully automate creation of the new user.
+
+- If a password was entered in the GUI, the toolkit will attempt to auto-type it.
+- If an SSH key is provided, the login will be automatic.
+- After login succeeds, click YES and the toolkit will auto-inject all commands.
+
+You will NOT have to type any commands manually.
+"@
+
+    [System.Windows.MessageBox]::Show($msg, "Interactive Bootstrap", 'OK', 'Information') | Out-Null
+
+    #
+    # Build SSH command with identity file if available
+    #
+    $sshArgs = @()
+    if ($IdentityFile) {
+        $sshArgs += "-i `"$IdentityFile`""
+    }
+    $sshArgs += "-p $Port"
+    $sshArgs += "-o StrictHostKeyChecking=no"
+    $sshArgs += "-o UserKnownHostsFile=`"$($Script:KnownHosts)`""
+    $sshArgs += "$User@$HostName"
+
+    $cmdLine = "ssh.exe " + ($sshArgs -join " ")
+    Write-Info "Launching interactive SSH for bootstrap: $cmdLine"
+
+    #
+    # Open terminal window with ssh.exe
+    #
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/k $cmdLine" | Out-Null
+
+    #
+    # Try to auto-type root password if available
+    #
+    if ($RootPassword) {
+        try {
+            $pwShell = New-Object -ComObject WScript.Shell
+            Start-Sleep -Milliseconds 1200    # timing delay
+            $pwShell.SendKeys($RootPassword + "{ENTER}")
+            Write-Info "Attempted to auto-send root SSH password."
+        } catch {
+            Write-ErrorLog "Failed to auto-send SSH password via SendKeys: $_"
+        }
+    }
+
+    #
+    # Wait for user to confirm login succeeded
+    #
+    $ready = [System.Windows.MessageBox]::Show(
+        "Once the SSH window shows a root shell prompt, click YES to inject commands.",
+        "Ready to Inject Commands?",
+        'YesNo',
+        'Question'
+    )
+    if ($ready -ne 'Yes') {
+        Write-Warn "User cancelled bootstrap before script injection."
+        return
+    }
+
+    #
+    # Build full bootstrap script (user add, password set, sudo, authorized_keys)
+    #
+    $bootstrapScript = @'
+set -e
+NEWUSER='{0}'
+NEWPASS='{1}'
+
+echo "=== Creating user $NEWUSER ==="
+
+if id "$NEWUSER" >/dev/null 2>&1; then
+  echo "User exists, skipping creation."
+else
+  if command -v useradd >/dev/null 2>&1; then
+    useradd -m -s /bin/bash "$NEWUSER"
+  else
+    adduser --disabled-password --gecos "" "$NEWUSER"
+  fi
+fi
+
+echo "$NEWUSER:$NEWPASS" | chpasswd
+
+if getent group sudo >/dev/null 2>&1; then
+  usermod -aG sudo "$NEWUSER"
+fi
+
+if [ -f /root/.ssh/authorized_keys ]; then
+  HOME_DIR=$(eval echo "~$NEWUSER")
+  mkdir -p "$HOME_DIR/.ssh"
+  cp /root/.ssh/authorized_keys "$HOME_DIR/.ssh/authorized_keys"
+  chown -R "$NEWUSER:$NEWUSER" "$HOME_DIR/.ssh"
+  chmod 700 "$HOME_DIR/.ssh"
+  chmod 600 "$HOME_DIR/.ssh/authorized_keys"
+fi
+
+echo "=== Bootstrap complete for $NEWUSER ==="
+'@ -f $NewUser, $RootPassword
+
+    #
+    # Inject script via SendKeys
+    #
+    try {
+        $wshell = New-Object -ComObject WScript.Shell
+    } catch {
+        Write-ErrorLog "Cannot create WScript.Shell for SendKeys."
+        return
+    }
+
+    $lines = $bootstrapScript -split "`r?`n"
+    foreach ($line in $lines) {
+        $safe = $line -replace '([\+\^\%\~\(\)\{\}])', '{$1}'
+        $wshell.SendKeys($safe + "{ENTER}")
+        Start-Sleep -Milliseconds 120
+    }
+
+    Write-Info "Bootstrap script sent successfully."
+}
 
 function Run-NewServerSetup {
     Write-Info "Run-NewServerSetup invoked."
@@ -1169,10 +1311,70 @@ function Run-NewServerSetup {
     Write-Info "Creating new user '$newUser' on $($conn.Host)."
 
     if ($conn.User -eq "root") {
-        Write-Warn "New Server Setup: detected root login. Using interactive ssh.exe pipeline for '$newUser'."
+        Write-Warn "New Server Setup: detected root login. Using interactive SSH bootstrap mode for '$newUser'."
 
-        # Build the bootstrap script that will run on the remote server
-        $bootstrapScript = @'
+        if (-not ($conn.PSObject.Properties.Match('Password').Count -gt 0 -and $conn.Password)) {
+
+            $pwWin  = New-Window -Title "Root SSH Password" -Width 360 -Height 200
+            $pwRoot = New-StackPanel -Orientation Vertical -Margin 16
+            $pwRoot.Children.Add((New-Label -Text "Enter the ROOT SSH password for $($conn.Host):" -FontSize 13 -Bold $true)) | Out-Null
+
+            $pwBox = New-TextBox -IsPassword $true
+            $pwRoot.Children.Add($pwBox) | Out-Null
+
+            $btnPanel = New-Object Windows.Controls.StackPanel
+            $btnPanel.Orientation = "Horizontal"
+            $btnPanel.HorizontalAlignment = "Center"
+            $btnPanel.Margin = "0,16,0,0"
+
+            $btnCancel = New-Button -Content "Cancel"
+            $btnCancel.Width = 100
+            $btnCancel.Margin = "0,0,12,0"
+            $btnCancel.Add_Click({ $pwWin.DialogResult = $false; $pwWin.Close() })
+
+            $btnOK = New-Button -Content "OK"
+            $btnOK.Width = 100
+            $btnOK.Add_Click({
+                if (-not $pwBox.Password) {
+                    Show-MessageBoxWarn "Password cannot be empty." "Root SSH Password"
+                    return
+                }
+                $pwWin.DialogResult = $true
+                $pwWin.Close()
+            })
+
+            $btnPanel.Children.Add($btnCancel) | Out-Null
+            $btnPanel.Children.Add($btnOK) | Out-Null
+            $pwRoot.Children.Add($btnPanel) | Out-Null
+
+            $pwWin.Content = $pwRoot
+            $null = $pwWin.ShowDialog()
+
+            if (-not $pwWin.DialogResult) {
+                Write-Warn "Root password entry cancelled; aborting bootstrap."
+                Show-MessageBoxWarn "Root bootstrap was cancelled because no SSH password was provided." "New Server Setup"
+                return
+            }
+
+            if ($conn.PSObject.Properties.Match('Password').Count -eq 0) {
+                $conn | Add-Member -NotePropertyName Password -NotePropertyValue $pwBox.Password -Force
+            } else {
+                $conn.Password = $pwBox.Password
+            }
+        }
+
+        Bootstrap-InteractiveRootSetup `
+            -HostName     $conn.Host `
+            -Port         $conn.Port `
+            -User         $conn.User `
+            -NewUser      $newUser `
+            -IdentityFile $conn.IdentityFile `
+            -RootPassword $conn.Password
+
+        return
+    }
+
+    $remoteScript = @'
 set -e
 NEWUSER='{0}'
 NEWPASS='{1}'
