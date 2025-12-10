@@ -1,1291 +1,1492 @@
-<#
+<# 
     server-toolkit.ps1
-    Stardust Collective - Server Setup Toolkit (Windows Edition)
+    Stardust Collective - Server Setup Toolkit (Windows Edition, GUI)
 
-    Requirements:
-      - PowerShell 5+ (Windows)
-      - OpenSSH client (ssh, scp, ssh-keygen) in PATH
-      - Optional: openssl for P12 verification
-      - Optional: puttygen.exe for PuTTY key export
-
-    Notes:
-      - All server actions happen over SSH.
-      - Profiles are stored in: $HOME\.ssh\{ProfileName}_ssh_config.txt
-      - No passwords are ever written to disk.
+    - Dark theme & accent colors inspired by NodeCloud GUI
+    - Full GUI flow (main menu + connection dialog + profile picker)
+    - Connection profiles in:  $HOME\.ssh\{ProfileName}_ssh_config.txt
+    - Debug log:               $HOME\server_setup.log
+    - PuTTY .ppk support via PuTTYgen (if available / installable)
 #>
 
-# ====================
-# BASIC CONFIG
-# ====================
-$Host.UI.RawUI.WindowTitle = "Stardust Collective - Server Toolkit"
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
 
-$Script:ProfilesDir   = Join-Path $HOME ".ssh"
-$Script:KnownHosts    = Join-Path $HOME ".ssh\known_hosts"
-$Script:CachedPass    = @{}
+#region Global config, logging, colors
+
+$Script:HomeDir    = [Environment]::GetFolderPath("UserProfile")
+$Script:ProfilesDir = Join-Path $Script:HomeDir ".ssh"
+$Script:KnownHosts  = Join-Path $Script:ProfilesDir "known_hosts"
+$Script:LogPath     = Join-Path $Script:HomeDir "server_setup.log"
+
+if (-not (Test-Path $Script:ProfilesDir)) {
+    New-Item -ItemType Directory -Path $Script:ProfilesDir -Force | Out-Null
+}
+if (-not (Test-Path $Script:KnownHosts)) {
+    New-Item -ItemType File -Path $Script:KnownHosts -Force | Out-Null
+}
+
+# NodeCloud-inspired colors
+$Script:Color_Background   = "#2b2b2b"
+$Script:Color_Text         = "#ffffff"
+$Script:Color_Panel        = "#3c3f41"
+$Script:Color_Button       = "#1284b6"
+$Script:Color_ButtonHover  = "#13628b"
+$Script:Color_Accent       = "#11c3f0"
+$Script:Color_Warning      = "#ffc857"
+$Script:Color_Error        = "#ff4d4d"
+$Script:Color_Success      = "#67e480"
+
+# in-memory cached connections
 $Script:NewServerConn = $null
 $Script:OldServerConn = $null
 
-$Script:LastP12Path       = $null 
-$Script:LastIdentityPath  = $null
-$Script:CleanedHosts      = New-Object 'System.Collections.Generic.HashSet[string]'
-
-if (-not (Test-Path $Script:ProfilesDir)) {
-    New-Item -ItemType Directory -Path $Script:ProfilesDir | Out-Null
-}
-
-# ====================
-# UTILS: COLORS AND PROMPTS
-# ====================
-function Write-Info($Text)  { Write-Host $Text -ForegroundColor Cyan }
-function Write-Ok($Text)    { Write-Host $Text -ForegroundColor Green }
-function Write-Warn($Text)  { Write-Host $Text -ForegroundColor Yellow }
-function Write-Err($Text)   { Write-Host $Text -ForegroundColor Red }
-
-function Show-Banner {
-    Clear-Host
-    Write-Info "STARDUST COLLECTIVE - SERVER TOOLKIT"
-    Write-Info "----------------------------------------------"
-    Write-Host
-}
-
-function Read-Text([string]$Prompt) {
-    Write-Host ("{0}: " -f $Prompt) -NoNewline
-    Read-Host
-}
-
-# function Read-TextWithDefault([string]$Prompt, [string]$Default) {
-#     if ($Default) {
-#         Write-Host ("{0} [{1}]: " -f $Prompt, $Default) -NoNewline
-#     } else {
-#         Write-Host ("{0}: " -f $Prompt) -NoNewline
-#     }
-#     $resp = Read-Host
-#     if ([string]::IsNullOrWhiteSpace($resp)) {
-#         return $Default
-#     }
-#     return $resp
-# }
-
-function Read-PasswordText([string]$Prompt) {
-    Write-Host ("{0}: " -f $Prompt) -NoNewline
-    $sec = Read-Host -AsSecureString
-    if (-not $sec) { return "" }
-    return [Runtime.InteropServices.Marshal]::PtrToStringUni(
-        [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+function Write-Log {
+    param(
+        [string]$Message,
+        [string]$Level = "INFO"
     )
-}
-
-function Confirm([string]$Prompt, [bool]$DefaultNo = $true) {
-    $suffix = if ($DefaultNo) { "[y/N]" } else { "[Y/n]" }
-    Write-Host "$Prompt $suffix " -NoNewline
-    $resp = Read-Host
-    if ([string]::IsNullOrWhiteSpace($resp)) {
-        return -not $DefaultNo
+    try {
+        $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        $line = "{0} [{1}] {2}" -f $timestamp, $Level.ToUpper(), $Message
+        Add-Content -Path $Script:LogPath -Value $line
+    } catch {
+        # last resort: ignore logging failures
     }
-    return $resp -match '^[Yy]'
 }
 
-function Pause() {
-    Write-Host
-    Write-Host "Press Enter to continue..." -NoNewline
-    [void][System.Console]::ReadLine()
-}
+function Write-Info  { param([string]$Msg) Write-Log $Msg "INFO"  }
+function Write-Warn  { param([string]$Msg) Write-Log $Msg "WARN"  }
+function Write-ErrorLog { param([string]$Msg) Write-Log $Msg "ERROR" }
 
-# ====================
-# INTRO SCREEN
-# ====================
-function Show-Intro {
-    Show-Banner
-    Write-Host "This tool runs from your local Windows computer and connects to your Linux server"
-    Write-Host "over SSH to help with:"
-    Write-Host "  - New server setup"
-    Write-Host "  - Creating non-root (sudo) users"
-    Write-Host "  - Backing up and uploading .p12 files"
-    Write-Host "  - Exporting SSH profiles"
-    Write-Host "  - Exporting PuTTY keys (Windows only)"
-    Write-Host
-    Write-Host "Connection profiles are saved to:"
-    Write-Host "  $Script:ProfilesDir\{ProfileName}_ssh_config.txt"
-    Write-Host
-    Write-Host "Press any key to continue to the menu..." -NoNewline
-    [void]$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-}
+#endregion
 
-# ====================
-# MENU ENGINE
-# ====================
-function Show-MainMenu {
-    $items = @(
-        "New Server Setup"
-        "Create Non-Root User"
-        "Backup P12 File (From old server)"
-        "Upload P12 File"
-        "Export SSH-Config File"
-        "Export to PuTTY Private Key"
-        "Server Login (Launches in new window)"
-        "Exit"
+#region WPF helpers (load, style, message boxes)
+
+Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
+
+function New-Window {
+    param(
+        [string]$Title,
+        [int]$Width = 600,
+        [int]$Height = 400
     )
-    $index = 0
-    while ($true) {
-        Show-Banner
-        for ($i = 0; $i -lt $items.Count; $i++) {
-            if ($i -eq $index) {
-                Write-Host ("> " + $items[$i]) -ForegroundColor Green
-            } else {
-                Write-Host ("  " + $items[$i])
-            }
-        }
 
-        $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-        switch ($key.VirtualKeyCode) {
-            38 { if ($index -gt 0) { $index-- } }                # Up
-            40 { if ($index -lt $items.Count - 1) { $index++ } } # Down
-            13 { return $items[$index] }                         # Enter
-        }
+    $window = New-Object Windows.Window
+    $window.Title = $Title
+    $window.Width = $Width
+    $window.Height = $Height
+    $window.WindowStartupLocation = "CenterScreen"
+    $window.ResizeMode = "CanMinimize"
+    $window.Background = $Color_Background
+    $window.Foreground = $Color_Text
+    $window.FontFamily = "Segoe UI"
+    $window.FontSize = 12
+    return $window
+}
+
+function New-StackPanel {
+    param(
+        [string]$Orientation = "Vertical",
+        [int]$Margin = 10
+    )
+    $sp = New-Object Windows.Controls.StackPanel
+    $sp.Orientation = $Orientation
+    $sp.Margin = [Windows.Thickness]::new($Margin)
+    return $sp
+}
+
+function New-Label {
+    param(
+        [string]$Text,
+        [int]$FontSize = 12,
+        [bool]$Bold = $false
+    )
+    $lbl = New-Object Windows.Controls.TextBlock
+    $lbl.Text = $Text
+    $lbl.Foreground = $Color_Text
+    $lbl.TextWrapping = "Wrap"
+    $lbl.Margin = "0,0,0,5"
+    $lbl.FontSize = $FontSize
+    if ($Bold) {
+        $lbl.FontWeight = "Bold"
+    }
+    return $lbl
+}
+
+function New-TextBox {
+    param(
+        [string]$Text = "",
+        [bool]$IsPassword = $false
+    )
+    if ($IsPassword) {
+        $pwd = New-Object Windows.Controls.PasswordBox
+        $pwd.Margin = "0,0,0,8"
+        $pwd.Background = $Color_Panel
+        $pwd.Foreground = $Color_Text
+        $pwd.BorderBrush = "#5c5c5c"
+        $pwd.BorderThickness = 1
+        $pwd.Padding = "4,2,4,2"
+        return $pwd
+    } else {
+        $tb = New-Object Windows.Controls.TextBox
+        $tb.Text = $Text
+        $tb.Margin = "0,0,0,8"
+        $tb.Background = $Color_Panel
+        $tb.Foreground = $Color_Text
+        $tb.BorderBrush = "#5c5c5c"
+        $tb.BorderThickness = 1
+        $tb.Padding = "4,2,4,2"
+        return $tb
     }
 }
 
-# ====================
-# PROFILE HANDLING
-# ====================
-function Test-ProfileNameValid([string]$Name) {
-    return $Name -match '^[A-Za-z0-9-]+$'
+function New-Button {
+    param(
+        [string]$Content,
+        [int]$Height = 32,
+        [int]$MarginTop = 8
+    )
+    $btn = New-Object Windows.Controls.Button
+    $btn.Content = $Content
+    $btn.Height = $Height
+    $btn.Margin = "0,$MarginTop,0,0"
+    $btn.Background = $Color_Button
+    $btn.Foreground = $Color_Text
+    $btn.BorderThickness = 0
+    $btn.Padding = "8,2,8,2"
+    $btn.HorizontalAlignment = "Stretch"
+
+    $btn.Add_MouseEnter({
+        param($s,$e)
+        $s.Background = $Color_ButtonHover
+    })
+    $btn.Add_MouseLeave({
+        param($s,$e)
+        $s.Background = $Color_Button
+    })
+    return $btn
 }
 
-function Get-ProfilePath([string]$ProfileName) {
-    Join-Path $Script:ProfilesDir ("{0}_ssh_config.txt" -f $ProfileName)
+function Show-MessageBoxInfo {
+    param(
+        [string]$Message,
+        [string]$Title = "Server Toolkit"
+    )
+    Write-Info "$Title: $Message"
+    [Windows.MessageBox]::Show($Message, $Title, 'OK', 'Information') | Out-Null
 }
 
-function Save-SSHProfile($ProfileData) {
-    $name = $ProfileData.Name
-    if (-not (Test-ProfileNameValid $name)) {
-        Write-Err "Profile name must be alphanumeric with dashes only."
-        return
-    }
-    $path = Get-ProfilePath $name
-    if (Test-Path $path) {
-        if (-not (Confirm "Profile '$name' exists. Overwrite?")) {
-            Write-Warn "Profile not saved."
-            return
-        }
-    }
-
-    $lines = @()
-    $lines += "### This ssh_config file can also be used to import this server's settings into Termius. ###"
-    $lines += ""
-    $lines += "Host $($ProfileData.Name)"
-    $lines += "    HostName $($ProfileData.Host)"
-    $lines += "    User $($ProfileData.User)"
-    $lines += "    Port $($ProfileData.Port)"
-    if ($ProfileData.IdentityFile) {
-        $lines += "    IdentityFile $($ProfileData.IdentityFile)"
-    }
-    $lines += ""
-    $lines += "# CreatedOn: $(Get-Date -Format yyyy-MM-dd)"
-    $lines += ("# SSH login: ssh{0} {1}@{2}" -f `
-        ($(if ($ProfileData.IdentityFile) { " -i $($ProfileData.IdentityFile)" } else { "" })),
-        $ProfileData.User, $ProfileData.Host)
-    $lines += ("# SFTP: sftp{0} {1}@{2}" -f `
-        ($(if ($ProfileData.IdentityFile) { " -i $($ProfileData.IdentityFile)" } else { "" })),
-        $ProfileData.User, $ProfileData.Host)
-
-    Set-Content -Path $path -Value $lines -Encoding UTF8
-    Write-Ok "Profile saved to: $path"
+function Show-MessageBoxWarn {
+    param(
+        [string]$Message,
+        [string]$Title = "Server Toolkit"
+    )
+    Write-Warn "$Title: $Message"
+    [Windows.MessageBox]::Show($Message, $Title, 'OK', 'Warning') | Out-Null
 }
+
+function Show-MessageBoxError {
+    param(
+        [string]$Message,
+        [string]$Title = "Server Toolkit"
+    )
+    Write-ErrorLog "$Title: $Message"
+    [Windows.MessageBox]::Show($Message, $Title, 'OK', 'Error') | Out-Null
+}
+
+function Show-Confirm {
+    param(
+        [string]$Message,
+        [string]$Title = "Confirm",
+        [bool]$DefaultYes = $false
+    )
+    Write-Info "Confirm: $Message"
+    $defaultButton = if ($DefaultYes) { 'Yes' } else { 'No' }
+    $result = [Windows.MessageBox]::Show($Message, $Title, 'YesNo', 'Question')
+    return ($result -eq 'Yes')
+}
+
+#endregion
+
+#region Profiles: parsing, saving, listing
+
+class ConnectionProfile {
+    [string]$Name
+    [string]$Host
+    [string]$User
+    [string]$Port
+    [string]$IdentityFile
+
+    ConnectionProfile([string]$name,[string]$host,[string]$user,[string]$port,[string]$identity) {
+        $this.Name = $name
+        $this.Host = $host
+        $this.User = $user
+        $this.Port = $port
+        $this.IdentityFile = $identity
+    }
+}
+
+function Test-ProfileNameValid {
+    param([string]$Name)
+    return ($Name -match '^[A-Za-z0-9-]+$')
+}
+
+function Get-ProfilePath {
+    param([string]$Name)
+    return (Join-Path $Script:ProfilesDir ("{0}_ssh_config.txt" -f $Name))
+}
+
 function Get-StoredProfiles {
+    Write-Info "Scanning for stored profiles in $Script:ProfilesDir"
     $files = Get-ChildItem -Path $Script:ProfilesDir -Filter "*_ssh_config.txt" -ErrorAction SilentlyContinue
-    if (-not $files) { return @() }
+    if (-not $files) {
+        Write-Info "No *_ssh_config.txt profiles found."
+        return @()
+    }
+
     $profiles = @()
     foreach ($f in $files) {
-        $content      = Get-Content $f -ErrorAction SilentlyContinue
+        try {
+            $content = Get-Content -LiteralPath $f.FullName -ErrorAction Stop
+        } catch {
+            Write-Warn "Failed to read profile file: $($f.FullName): $_"
+            continue
+        }
+
         $hostLine     = $content | Where-Object { $_ -match '^\s*Host\s+' }      | Select-Object -First 1
         $hostNameLine = $content | Where-Object { $_ -match '^\s*HostName\s+' }  | Select-Object -First 1
         $userLine     = $content | Where-Object { $_ -match '^\s*User\s+' }      | Select-Object -First 1
         $portLine     = $content | Where-Object { $_ -match '^\s*Port\s+' }      | Select-Object -First 1
         $identLine    = $content | Where-Object { $_ -match '^\s*IdentityFile\s+' } | Select-Object -First 1
 
-        if (-not $hostLine -or -not $hostNameLine -or -not $userLine) { continue }
-
-        $p = [pscustomobject]@{
-            Name         = ($hostLine     -replace '^\s*Host\s+', '').Trim()
-            Host         = ($hostNameLine -replace '^\s*HostName\s+', '').Trim()
-            User         = ($userLine     -replace '^\s*User\s+', '').Trim()
-            Port         = if ($portLine)  { ($portLine  -replace '^\s*Port\s+', '').Trim() }        else { "22" }
-            IdentityFile = if ($identLine) { ($identLine -replace '^\s*IdentityFile\s+', '').Trim() } else { ""  }
+        if (-not $hostLine -or -not $hostNameLine -or -not $userLine) {
+            Write-Warn "Skipping invalid ssh_config file: $($f.FullName)"
+            continue
         }
-        $profiles += $p
+
+        $name = ($hostLine -replace '^\s*Host\s+', '').Trim()
+        $host = ($hostNameLine -replace '^\s*HostName\s+', '').Trim()
+        $user = ($userLine -replace '^\s*User\s+', '').Trim()
+        $port = "22"
+        if ($portLine) {
+            $port = ($portLine -replace '^\s*Port\s+', '').Trim()
+        }
+        $identity = ""
+        if ($identLine) {
+            $identity = ($identLine -replace '^\s*IdentityFile\s+', '').Trim()
+        }
+
+        $profiles += [ConnectionProfile]::new($name,$host,$user,$port,$identity)
     }
-    $profiles | Sort-Object Name
+
+    $profiles = $profiles | Sort-Object Name
+    Write-Info "Found $($profiles.Count) stored profile(s)."
+    return $profiles
 }
 
-function Select-ProfileFromDisk([string]$Purpose) {
-    $profiles = Get-StoredProfiles
-    if (-not $profiles -or $profiles.Count -eq 0) {
-        Write-Warn "No stored profiles found."
+function Save-SSHProfile {
+    param(
+        [ConnectionProfile]$Profile
+    )
+
+    if (-not (Test-ProfileNameValid $Profile.Name)) {
+        Show-MessageBoxError "Invalid profile name. Use letters, numbers, and dashes only." "Profile Name"
+        return
+    }
+
+    $file = Get-ProfilePath -Name $Profile.Name
+    Write-Info "Saving profile '$($Profile.Name)' to $file"
+
+    $lines = @()
+    $lines += "### This ssh_config file can also be used to import this server's settings into Termius. ###"
+    $lines += ""
+    $lines += "Host $($Profile.Name)"
+    $lines += "    HostName $($Profile.Host)"
+    $lines += "    User $($Profile.User)"
+    $lines += "    Port $($Profile.Port)"
+    if ($Profile.IdentityFile) {
+        $lines += "    IdentityFile $($Profile.IdentityFile)"
+    }
+    $lines += ""
+    $lines += "# CreatedOn: $(Get-Date -Format yyyy-MM-dd)"
+    $login = "ssh"
+    $sftp  = "sftp"
+    if ($Profile.IdentityFile) {
+        $login += " -i $($Profile.IdentityFile)"
+        $sftp  += " -i $($Profile.IdentityFile)"
+    }
+    $login += " $($Profile.User)@$($Profile.Host)"
+    $sftp  += " $($Profile.User)@$($Profile.Host)"
+    $lines += "# SSH login: $login"
+    $lines += "# SFTP: $sftp"
+
+    Set-Content -LiteralPath $file -Value $lines -Encoding UTF8 -Force
+    Write-Info "Profile '$($Profile.Name)' saved."
+}
+
+#endregion
+
+#region PuTTY / PuTTYgen helpers (.ppk conversion)
+
+function Test-IsPuTTYKey {
+    param([string]$FilePath)
+    if (-not (Test-Path $FilePath)) { return $false }
+    try {
+        $firstLine = (Get-Content -LiteralPath $FilePath -TotalCount 1 -ErrorAction Stop)
+        return ($firstLine -match '^PuTTY-User-Key-File-')
+    } catch {
+        return $false
+    }
+}
+
+function Find-PuTTYgen {
+    Write-Info "Locating PuTTYgen.exe"
+    $candidates = @()
+
+    $pf = ${env:ProgramFiles}
+    $pf86 = ${env:ProgramFiles(x86)}
+
+    if ($pf)   { $candidates += (Join-Path $pf   "PuTTY\puttygen.exe") }
+    if ($pf86) { $candidates += (Join-Path $pf86 "PuTTY\puttygen.exe") }
+
+    # PATH lookup
+    $cmd = Get-Command "puttygen.exe" -ErrorAction SilentlyContinue
+    if ($cmd) {
+        $candidates += $cmd.Source
+    }
+
+    foreach ($c in $candidates | Select-Object -Unique) {
+        if (Test-Path $c) {
+            Write-Info "Found PuTTYgen at $c"
+            return $c
+        }
+    }
+
+    Write-Warn "PuTTYgen not found in standard locations."
+    return $null
+}
+
+function Install-PuTTYgen {
+    # best effort; user may not have Chocolatey; fallback is manual download
+    Write-Info "Attempting to install or download PuTTYgen."
+
+    $pg = Find-PuTTYgen
+    if ($pg) { return $pg }
+
+    $hasChoco = Get-Command choco -ErrorAction SilentlyContinue
+    if ($hasChoco) {
+        if (Show-Confirm "PuTTYgen not found. Install PuTTY via Chocolatey now?" "PuTTYgen Install" $true) {
+            try {
+                choco install putty -y | Out-Null
+                $pg = Find-PuTTYgen
+                if ($pg) { return $pg }
+            } catch {
+                Write-ErrorLog "Chocolatey install of PuTTY failed: $_"
+            }
+        }
+    }
+
+    # fallback: download puttygen.exe to temp
+    if (Show-Confirm "PuTTYgen still not found. Download a portable PuTTYgen.exe to your TEMP folder?" "PuTTYgen Download") {
+        try {
+            $url = "https://the.earth.li/~sgtatham/putty/latest/w64/puttygen.exe"
+            $dest = Join-Path $env:TEMP "puttygen.exe"
+            Write-Info "Downloading PuTTYgen from $url to $dest"
+            Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+            if (Test-Path $dest) {
+                Write-Info "PuTTYgen downloaded to $dest"
+                return $dest
+            }
+        } catch {
+            Write-ErrorLog "Failed to download PuTTYgen: $_"
+        }
+    }
+
+    Show-MessageBoxWarn "PuTTYgen could not be installed or downloaded. .ppk files cannot be converted." "PuTTYgen"
+    return $null
+}
+
+function Convert-PuTTYKey {
+    param(
+        [string]$PpkPath
+    )
+
+    if (-not (Test-Path $PpkPath)) {
+        Show-MessageBoxError "PuTTY key file not found: $PpkPath" "PuTTY Key"
         return $null
     }
 
-    $index = 0
-    while ($true) {
-        Show-Banner
-        Write-Host "$Purpose - Select a stored connection profile:"
-        Write-Host
-        for ($i = 0; $i -lt $profiles.Count; $i++) {
-            $line = "{0} ({1}@{2}:{3})" -f $profiles[$i].Name, $profiles[$i].User, $profiles[$i].Host, $profiles[$i].Port
-            if ($i -eq $index) {
-                Write-Host ("> " + $line) -ForegroundColor Green
-            } else {
-                Write-Host ("  " + $line)
-            }
-        }
-        Write-Host
-        Write-Host "Use Up/Down arrows and Enter. Press Esc to cancel."
+    $puttygen = Find-PuTTYgen
+    if (-not $puttygen) {
+        $puttygen = Install-PuTTYgen
+        if (-not $puttygen) { return $null }
+    }
 
-        $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-        if ($key.VirtualKeyCode -eq 27) { return $null } # Esc
-
-        switch ($key.VirtualKeyCode) {
-            38 { if ($index -gt 0)                 { $index-- } }             # Up
-            40 { if ($index -lt $profiles.Count-1) { $index++ } }             # Down
-            13 { return $profiles[$index] }                                   # Enter
+    $dest = [System.IO.Path]::ChangeExtension($PpkPath, ".openssh.key")
+    if (Test-Path $dest) {
+        if (-not (Show-Confirm "Converted key '$dest' already exists. Overwrite it?" "PuTTY Conversion")) {
+            return $dest
         }
+    }
+
+    Write-Info "Converting PuTTY key $PpkPath to OpenSSH format at $dest"
+    $args = "`"$PpkPath`" -O private-openssh -o `"$dest`""
+    $proc = Start-Process -FilePath $puttygen -ArgumentList $args -PassThru -WindowStyle Hidden -Wait
+    if ($proc.ExitCode -eq 0 -and (Test-Path $dest)) {
+        Show-MessageBoxInfo "PuTTY key converted successfully to $dest" "PuTTY Conversion"
+        Write-Info "PuTTY->OpenSSH conversion succeeded: $dest"
+        return $dest
+    } else {
+        Show-MessageBoxError "PuTTYgen conversion failed. ExitCode: $($proc.ExitCode)" "PuTTY Conversion"
+        Write-ErrorLog "PuTTYgen conversion failed. ExitCode: $($proc.ExitCode)"
+        return $null
     }
 }
 
-function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
+#endregion
+
+#region File selection (SSH key, P12) via GUI
+
+Add-Type -AssemblyName System.Windows.Forms
+
+function Select-SSHKeyFile {
+    Write-Info "Opening SSH key file browser."
+    $dlg = New-Object System.Windows.Forms.OpenFileDialog
+    $dlg.Title = "Select SSH Private Key"
+    $dlg.InitialDirectory = (Join-Path $Script:HomeDir ".ssh")
+    $dlg.Filter = "All files (*.*)|*.*"
+
+    if ($dlg.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
+        Write-Info "User cancelled SSH key file selection."
+        return $null
+    }
+
+    $path = $dlg.FileName
+    Write-Info "User selected SSH key file: $path"
+
+    if (Test-IsPuTTYKey $path) {
+        if (Show-Confirm "The selected key appears to be a PuTTY .ppk file. Convert it to OpenSSH format now?" "PuTTY Key" $true) {
+            $converted = Convert-PuTTYKey -PpkPath $path
+            return $converted
+        } else {
+            return $null
+        }
+    }
+
+    return $path
+}
+
+function Select-P12File {
+    Write-Info "Opening .p12 file browser."
+    $dlg = New-Object System.Windows.Forms.OpenFileDialog
+    $dlg.Title = "Select .p12 File"
+    $dlg.InitialDirectory = (Join-Path $Script:HomeDir "Downloads")
+    $dlg.Filter = "P12 files (*.p12)|*.p12|All files (*.*)|*.*"
+    if ($dlg.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
+        Write-Info "User cancelled .p12 file selection."
+        return $null
+    }
+    $path = $dlg.FileName
+    Write-Info "Selected .p12 file: $path"
+    return $path
+}
+
+#endregion
+
+#region SSH helpers (ssh, scp, host-key cleanup)
+
+function Prepare-HostKey {
+    param([string]$Host)
+    # We lazily clean on mismatch; but this can be used for proactive host-key checks if desired.
+    Write-Info "Prepare-HostKey called for host: $Host"
+}
+
+function Invoke-SshCommand {
+    param(
+        [string]$Host,
+        [string]$User,
+        [string]$Port = "22",
+        [string]$IdentityFile,
+        [string]$Command
+    )
+
+    $args = @("-p", $Port)
+    if ($IdentityFile) {
+        $args += @("-i", $IdentityFile)
+    }
+    $args += "$User@$Host"
+    if ($Command) {
+        $args += $Command
+    }
+
+    Write-Info "Running ssh command: ssh $($args -join ' ')"
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "ssh"
+    $psi.Arguments = ($args -join " ")
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError  = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+    [void]$p.Start()
+
+    $stdout = $p.StandardOutput.ReadToEnd()
+    $stderr = $p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+
+    if ($stderr -match "REMOTE HOST IDENTIFICATION HAS CHANGED") {
+        Write-Warn "Host key mismatch detected for $Host. Cleaning known_hosts entry and retrying."
+        try {
+            & ssh-keygen -R $Host | Out-Null
+        } catch {
+            Write-ErrorLog "ssh-keygen -R failed for host $Host: $_"
+        }
+
+        # retry once
+        $p = New-Object System.Diagnostics.Process
+        $p.StartInfo = $psi
+        [void]$p.Start()
+        $stdout = $p.StandardOutput.ReadToEnd()
+        $stderr = $p.StandardError.ReadToEnd()
+        $p.WaitForExit()
+    }
+
+    if ($stderr) {
+        Write-Warn "ssh stderr for $Host: $stderr"
+    }
+
+    return [PSCustomObject]@{
+        ExitCode = $p.ExitCode
+        StdOut   = $stdout
+        StdErr   = $stderr
+    }
+}
+
+function Invoke-ScpDownload {
+    param(
+        [string]$Host,
+        [string]$User,
+        [string]$Port = "22",
+        [string]$IdentityFile,
+        [string]$RemotePath,
+        [string]$LocalPath
+    )
+
+    $args = @("-P", $Port)
+    if ($IdentityFile) {
+        $args += @("-i", $IdentityFile)
+    }
+    $args += "$User@$Host:`"$RemotePath`""
+    $args += "`"$LocalPath`""
+
+    Write-Info "Running scp download: scp $($args -join ' ')"
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "scp"
+    $psi.Arguments = ($args -join " ")
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError  = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+    [void]$p.Start()
+    $stdout = $p.StandardOutput.ReadToEnd()
+    $stderr = $p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+
+    if ($stderr -match "REMOTE HOST IDENTIFICATION HAS CHANGED") {
+        Write-Warn "Host key mismatch for $Host during scp. Cleaning known_hosts and retrying."
+        try {
+            & ssh-keygen -R $Host | Out-Null
+        } catch {
+            Write-ErrorLog "ssh-keygen -R failed for host $Host: $_"
+        }
+
+        $p = New-Object System.Diagnostics.Process
+        $p.StartInfo = $psi
+        [void]$p.Start()
+        $stdout = $p.StandardOutput.ReadToEnd()
+        $stderr = $p.StandardError.ReadToEnd()
+        $p.WaitForExit()
+    }
+
+    if ($stderr) {
+        Write-Warn "scp stderr: $stderr"
+    }
+
+    return [PSCustomObject]@{
+        ExitCode = $p.ExitCode
+        StdOut   = $stdout
+        StdErr   = $stderr
+    }
+}
+
+function Invoke-ScpUpload {
+    param(
+        [string]$Host,
+        [string]$User,
+        [string]$Port = "22",
+        [string]$IdentityFile,
+        [string]$LocalPath,
+        [string]$RemotePath
+    )
+
+    $args = @("-P", $Port)
+    if ($IdentityFile) {
+        $args += @("-i", $IdentityFile)
+    }
+    $args += "`"$LocalPath`""
+    $args += "$User@$Host:`"$RemotePath`""
+
+    Write-Info "Running scp upload: scp $($args -join ' ')"
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "scp"
+    $psi.Arguments = ($args -join " ")
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError  = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+    [void]$p.Start()
+    $stdout = $p.StandardOutput.ReadToEnd()
+    $stderr = $p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+
+    if ($stderr -match "REMOTE HOST IDENTIFICATION HAS CHANGED") {
+        Write-Warn "Host key mismatch for $Host during scp. Cleaning known_hosts and retrying."
+        try {
+            & ssh-keygen -R $Host | Out-Null
+        } catch {
+            Write-ErrorLog "ssh-keygen -R failed for host $Host: $_"
+        }
+
+        $p = New-Object System.Diagnostics.Process
+        $p.StartInfo = $psi
+        [void]$p.Start()
+        $stdout = $p.StandardOutput.ReadToEnd()
+        $stderr = $p.StandardError.ReadToEnd()
+        $p.WaitForExit()
+    }
+
+    if ($stderr) {
+        Write-Warn "scp stderr: $stderr"
+    }
+
+    return [PSCustomObject]@{
+        ExitCode = $p.ExitCode
+        StdOut   = $stdout
+        StdErr   = $stderr
+    }
+}
+
+#endregion
+
+#region Connection dialog & profile picker
+
+function Show-ConnectionDialog {
+    param(
+        [string]$Purpose
+    )
+
+    Write-Info "Opening connection dialog for '$Purpose'."
+
+    $win = New-Window -Title "Server Connection - $Purpose" -Width 480 -Height 380
+    $root = New-StackPanel -Orientation Vertical -Margin 16
+
+    $title = New-Label -Text $Purpose -FontSize 16 -Bold $true
+    $title.Foreground = $Color_Accent
+    $root.Children.Add($title) | Out-Null
+
+    $hint = New-Label -Text "Enter your server connection details. Fields marked * are required."
+    $hint.Foreground = $Color_Text
+    $root.Children.Add($hint) | Out-Null
+
+    # Grid for labels + controls
+    $grid = New-Object Windows.Controls.Grid
+    $grid.Margin = "0,8,0,0"
+    for ($i=0; $i -lt 2; $i++) {
+        $col = New-Object Windows.Controls.ColumnDefinition
+        if ($i -eq 0) { $col.Width = "Auto" } else { $col.Width = "*" }
+        $grid.ColumnDefinitions.Add($col)
+    }
+
+    function Add-GridRow([string]$labelText, $control) {
+        $rowIndex = $grid.RowDefinitions.Count
+        $row = New-Object Windows.Controls.RowDefinition
+        $row.Height = "Auto"
+        $grid.RowDefinitions.Add($row)
+
+        $lbl = New-Label -Text $labelText
+        $lbl.Margin = "0,0,8,4"
+
+        [Windows.Controls.Grid]::SetRow($lbl, $rowIndex)
+        [Windows.Controls.Grid]::SetColumn($lbl, 0)
+        [Windows.Controls.Grid]::SetRow($control, $rowIndex)
+        [Windows.Controls.Grid]::SetColumn($control, 1)
+
+        $grid.Children.Add($lbl) | Out-Null
+        $grid.Children.Add($control) | Out-Null
+    }
+
+    $tbHost = New-TextBox
+    Add-GridRow "Server IP or Hostname *" $tbHost
+
+    $tbUser = New-TextBox
+    Add-GridRow "SSH Username *" $tbUser
+
+    $tbPort = New-TextBox -Text "22"
+    Add-GridRow "SSH Port" $tbPort
+
+    # Identity file + browse button
+    $spIdent = New-Object Windows.Controls.StackPanel
+    $spIdent.Orientation = "Horizontal"
+    $spIdent.Margin = "0,0,0,8"
+
+    $tbIdent = New-TextBox
+    $tbIdent.Width = 260
+    $btnBrowse = New-Button -Content "Browse..."
+    $btnBrowse.Width = 100
+    $btnBrowse.Margin = "8,0,0,0"
+    $btnBrowse.Add_Click({
+        $path = Select-SSHKeyFile
+        if ($path) { $tbIdent.Text = $path }
+    })
+    $spIdent.Children.Add($tbIdent) | Out-Null
+    $spIdent.Children.Add($btnBrowse) | Out-Null
+
+    Add-GridRow "SSH Private Key (optional)" $spIdent
+
+    $tbPassword = New-TextBox -IsPassword $true
+    Add-GridRow "Password (optional)" $tbPassword
+
+    $cbSaveProfile = New-Object Windows.Controls.CheckBox
+    $cbSaveProfile.Content = "Save as connection profile"
+    $cbSaveProfile.Margin = "0,4,0,4"
+    $cbSaveProfile.Foreground = $Color_Text
+
+    $tbProfileName = New-TextBox
+    $tbProfileName.IsEnabled = $false
+
+    $cbSaveProfile.Add_Checked({ $tbProfileName.IsEnabled = $true })
+    $cbSaveProfile.Add_Unchecked({ $tbProfileName.IsEnabled = $false })
+
+    Add-GridRow "Save Profile" $cbSaveProfile
+    Add-GridRow "Profile Name" $tbProfileName
+
+    $root.Children.Add($grid) | Out-Null
+
+    # Buttons
+    $btnPanel = New-Object Windows.Controls.StackPanel
+    $btnPanel.Orientation = "Horizontal"
+    $btnPanel.HorizontalAlignment = "Right"
+    $btnPanel.Margin = "0,12,0,0"
+
+    $btnCancel = New-Button -Content "Cancel"
+    $btnCancel.Width = 100
+    $btnCancel.Margin = "0,0,8,0"
+    $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
+
+    $btnOK = New-Button -Content "Connect"
+    $btnOK.Width = 120
+    $btnOK.Add_Click({
+        if (-not $tbHost.Text.Trim()) {
+            Show-MessageBoxWarn "Please enter a server hostname or IP." "Validation"
+            return
+        }
+        if (-not $tbUser.Text.Trim()) {
+            Show-MessageBoxWarn "Please enter an SSH username." "Validation"
+            return
+        }
+        if ($cbSaveProfile.IsChecked -and -not $tbProfileName.Text.Trim()) {
+            Show-MessageBoxWarn "Please enter a profile name or uncheck 'Save as connection profile'." "Validation"
+            return
+        }
+        $win.DialogResult = $true
+        $win.Close()
+    })
+
+    $btnPanel.Children.Add($btnCancel) | Out-Null
+    $btnPanel.Children.Add($btnOK) | Out-Null
+    $root.Children.Add($btnPanel) | Out-Null
+
+    $win.Content = $root
+    $null = $win.ShowDialog()
+
+    if (-not $win.DialogResult) {
+        Write-Info "Connection dialog cancelled by user."
+        return $null
+    }
+
+    $conn = [PSCustomObject]@{
+        Name         = if ($cbSaveProfile.IsChecked) { $tbProfileName.Text.Trim() } else { "" }
+        Host         = $tbHost.Text.Trim()
+        User         = $tbUser.Text.Trim()
+        Port         = (if ($tbPort.Text.Trim()) { $tbPort.Text.Trim() } else { "22" })
+        IdentityFile = $tbIdent.Text.Trim()
+        Password     = $tbPassword.Password
+    }
+
+    Write-Info "Connection dialog collected: Host=$($conn.Host), User=$($conn.User), Port=$($conn.Port), IdentityFile=$($conn.IdentityFile), SaveProfile=$($cbSaveProfile.IsChecked)"
+
+    return $conn
+}
+
+function Select-ProfileFromDisk {
+    param([string]$Purpose)
+
+    $profiles = Get-StoredProfiles
+    if (-not $profiles -or $profiles.Count -eq 0) {
+        Show-MessageBoxWarn "No stored connection profiles were found in $($Script:ProfilesDir)." "Profiles"
+        return $null
+    }
+
+    $win = New-Window -Title "Select Profile - $Purpose" -Width 480 -Height 360
+    $root = New-StackPanel -Orientation Vertical -Margin 16
+
+    $title = New-Label -Text "$Purpose - Select a stored connection profile:" -FontSize 16 -Bold $true
+    $title.Foreground = $Color_Accent
+    $root.Children.Add($title) | Out-Null
+
+    $lb = New-Object Windows.Controls.ListBox
+    $lb.Margin = "0,8,0,8"
+    $lb.Background = $Color_Panel
+    $lb.Foreground = $Color_Text
+
+    foreach ($p in $profiles) {
+        $item = New-Object Windows.Controls.ListBoxItem
+        $item.Content = "{0} ({1}@{2}:{3})" -f $p.Name, $p.User, $p.Host, $p.Port
+        $item.Tag     = $p
+        $lb.Items.Add($item) | Out-Null
+    }
+
+    $root.Children.Add($lb) | Out-Null
+
+    $btnPanel = New-Object Windows.Controls.StackPanel
+    $btnPanel.Orientation = "Horizontal"
+    $btnPanel.HorizontalAlignment = "Right"
+
+    $btnCancel = New-Button -Content "Cancel"
+    $btnCancel.Width = 100
+    $btnCancel.Margin = "0,0,8,0"
+    $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
+
+    $btnOK = New-Button -Content "Use Profile"
+    $btnOK.Width = 120
+    $btnOK.Add_Click({
+        if (-not $lb.SelectedItem) {
+            Show-MessageBoxWarn "Please select a profile or click Cancel." "Profile Selection"
+            return
+        }
+        $win.DialogResult = $true
+        $win.Close()
+    })
+
+    $btnPanel.Children.Add($btnCancel) | Out-Null
+    $btnPanel.Children.Add($btnOK) | Out-Null
+    $root.Children.Add($btnPanel) | Out-Null
+
+    $win.Content = $root
+    $null = $win.ShowDialog()
+
+    if (-not $win.DialogResult) {
+        Write-Info "Profile selection cancelled."
+        return $null
+    }
+
+    $selectedItem = [Windows.Controls.ListBoxItem]$lb.SelectedItem
+    $p = [ConnectionProfile]$selectedItem.Tag
+    Write-Info "User selected profile: $($p.Name) ($($p.User)@$($p.Host):$($p.Port))"
+    return $p
+}
+
+function Prompt-Connection {
+    param(
+        [string]$Purpose,
+        [ref]$CachedConn
+    )
+
+    Write-Info "Prompt-Connection started for '$Purpose'. CachedConn set = $([bool]$CachedConn.Value)"
+
+    # 1) Offer cached connection reuse
     if ($CachedConn.Value) {
         $c = $CachedConn.Value
-        if (Confirm "Reuse $Purpose connection: $($c.User)@$($c.Host):$($c.Port)?" $true) {
+        $msg = "Reuse $Purpose connection: $($c.User)@$($c.Host):$($c.Port)?"
+        if (Show-Confirm $msg "Reuse Connection" $true) {
             Prepare-HostKey $c.Host
             return $c
         }
     }
 
+    # 2) Show profile selector if any exist
     $profiles = Get-StoredProfiles
     if ($profiles -and $profiles.Count -gt 0) {
-        Write-Info "Detected $($profiles.Count) stored connection profile(s) in $Script:ProfilesDir."
-        $p = Select-ProfileFromDisk "$Purpose"
+        Write-Info "Prompt-Connection: offering profile list for '$Purpose'."
+        $p = Select-ProfileFromDisk -Purpose $Purpose
         if ($p) {
             $CachedConn.Value = $p
             Prepare-HostKey $p.Host
             return $p
-        }
-    } else {
-        Write-Warn "No stored connection profiles found in $Script:ProfilesDir matching '*_ssh_config.txt'."
-    }
-
-    Show-Banner
-    Write-Host "$Purpose - manual connection entry"
-    $serverHost = Read-Text "Server IP or Hostname"
-    $user       = Read-Text "SSH Username"
-    $port       = Read-Text "SSH Port (default 22)"
-    if (-not $port) { $port = "22" }
-
-    $ident = ""
-    if (Confirm "Use SSH private key file for this connection?" $false) {
-        $ident = Select-SSHKeyFile
-        if ($ident) { $Script:LastIdentityPath = $ident }
-    }
-
-    $conn = [pscustomobject]@{
-        Name         = ""
-        Host         = $serverHost
-        User         = $user
-        Port         = $port
-        IdentityFile = $ident
-    }
-
-    if (Confirm "Save this connection as a profile?") {
-        $pname = Read-Text "Profile name (letters, numbers, dashes only)"
-        if (-not (Test-ProfileNameValid $pname)) {
-            Write-Err "Invalid profile name. Not saving."
         } else {
-            $conn.Name = $pname
-            Save-SSHProfile $conn
+            Write-Info "No profile chosen, falling back to manual/GUI entry."
         }
-    }
-
-    $CachedConn.Value = $conn
-    Prepare-HostKey $conn.Host
-    return $conn
-}
-
-# ====================
-# SSH HELPERS
-# ====================
-function Prepare-HostKey([string]$HostName) {
-    if ([string]::IsNullOrWhiteSpace($HostName)) { return }
-
-    if (-not $Script:CleanedHosts.Contains($HostName)) {
-        & ssh-keygen -R $HostName | Out-Null
-        $Script:CleanedHosts.Add($HostName) | Out-Null
-    }
-}
-
-function Build-SshBaseArgs($Conn) {
-    $args = @(
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=$Script:KnownHosts",
-        "-p", $Conn.Port
-    )
-    if ($Conn.IdentityFile) {
-        $args += @("-i", $Conn.IdentityFile)
-    }
-    return $args
-}
-
-function Invoke-OpenSSHWithKnownHostsFix {
-    param(
-        [Parameter(Mandatory=$true)][string]$Exe,
-        [Parameter(Mandatory=$true)][string[]]$Args,
-        [Parameter(Mandatory=$true)][string]$HostName,
-        [int]$MaxRetries = 1
-    )
-
-    $retry = 0
-    while ($true) {
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $Exe
-        $psi.Arguments = [string]::Join(" ", $Args)
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError  = $true
-        $psi.UseShellExecute = $false
-        $psi.CreateNoWindow = $true
-
-        $p = [System.Diagnostics.Process]::Start($psi)
-        $stdout = $p.StandardOutput.ReadToEnd()
-        $stderr = $p.StandardError.ReadToEnd()
-        $p.WaitForExit()
-
-        if ($stdout) { Write-Host $stdout }
-        if ($stderr) { Write-Host $stderr }
-
-        if ($p.ExitCode -eq 0) {
-            return 0
-        }
-
-        if ($stderr -like "*REMOTE HOST IDENTIFICATION HAS CHANGED!*" -and $retry -lt $MaxRetries) {
-            Write-Warn "Host key mismatch detected for $HostName. Cleaning known_hosts and retrying..."
-            & ssh-keygen -R $HostName | Out-Null
-            $retry++
-            continue
-        }
-
-        return $p.ExitCode
-    }
-}
-
-function Invoke-SshCommand($Conn, [string]$RemoteCmd) {
-    $args = Build-SshBaseArgs $Conn
-    $args += ("{0}@{1}" -f $Conn.User, $Conn.Host)
-    if ($RemoteCmd) { $args += $RemoteCmd }
-
-    [void](Invoke-OpenSSHWithKnownHostsFix -Exe "ssh" -Args $args -HostName $Conn.Host)
-}
-
-function Invoke-ScpDownload($Conn, [string]$RemotePath, [string]$LocalPath) {
-    $args = Build-SshBaseArgs $Conn
-    $source = "{0}@{1}:{2}" -f $Conn.User, $Conn.Host, $RemotePath
-    $args += @($source, $LocalPath)
-
-    [void](Invoke-OpenSSHWithKnownHostsFix -Exe "scp" -Args $args -HostName $Conn.Host)
-}
-
-function Invoke-ScpUpload($Conn, [string]$LocalPath, [string]$RemotePath) {
-    $args = Build-SshBaseArgs $Conn
-    $dest = "{0}@{1}:{2}" -f $Conn.User, $Conn.Host, $RemotePath
-    $args += @($LocalPath, $dest)
-
-    [void](Invoke-OpenSSHWithKnownHostsFix -Exe "scp" -Args $args -HostName $Conn.Host)
-}
-
-# ====================
-# P12 HELPERS
-# ====================
-function Select-LocalP12File {
-    Add-Type -AssemblyName System.Windows.Forms | Out-Null
-    $ofd = New-Object System.Windows.Forms.OpenFileDialog
-    $ofd.Filter = "P12 Files (*.p12)|*.p12|All Files (*.*)|*.*"
-    $ofd.Title  = "Select a .p12 file"
-    if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        return $ofd.FileName
-    }
-    return $null
-}
-
-function Find-PuTTYgen {
-    $paths = @(
-        "C:\Program Files\PuTTY\puttygen.exe",
-        "C:\Program Files (x86)\PuTTY\puttygen.exe"
-    )
-
-    foreach ($p in $paths) {
-        if (Test-Path $p) { return $p }
-    }
-
-    $gcm = Get-Command puttygen.exe -ErrorAction SilentlyContinue
-    if ($gcm) { return $gcm.Source }
-
-    return $null
-}
-
-function Install-PuTTYgen {
-    Write-Warn "PuTTYgen not found."
-
-    $choice = Read-Text "Install PuTTYgen now? (via Chocolatey if available, otherwise direct download) [Y/n]"
-    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "Y" }
-
-    if ($choice -match "^[Nn]") {
-        Write-Err "PuTTYgen is required to convert PuTTY (.ppk) keys. Aborting PuTTY key usage."
-        return $null
-    }
-
-    $choco = Get-Command choco -ErrorAction SilentlyContinue
-    if ($choco) {
-        Write-Info "Installing PuTTY via Chocolatey..."
-        choco install putty -y | Out-Null
-        $gen = Find-PuTTYgen
-        if ($gen) {
-            Write-Ok "PuTTYgen installed successfully: $gen"
-            return $gen
-        }
-    }
-
-    Write-Info "Downloading standalone PuTTYgen.exe..."
-    $url  = "https://the.earth.li/~sgtatham/putty/latest/w64/puttygen.exe"
-    $dest = Join-Path $env:TEMP "puttygen.exe"
-
-    try {
-        Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
-        Write-Ok "PuTTYgen downloaded: $dest"
-        return $dest
-    } catch {
-        Write-Err "Failed to download PuTTYgen."
-        return $null
-    }
-}
-
-function Select-SSHKeyFile {
-    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue | Out-Null
-    $ofd = New-Object System.Windows.Forms.OpenFileDialog
-    $ofd.Title = "Select SSH private key"
-
-    if ($Script:LastIdentityPath -and (Test-Path $Script:LastIdentityPath)) {
-        $ofd.InitialDirectory = [System.IO.Path]::GetDirectoryName($Script:LastIdentityPath)
     } else {
-        $ofd.InitialDirectory = Join-Path $HOME ".ssh"
+        Write-Info "Prompt-Connection: no stored profiles found; going straight to manual/GUI entry."
     }
 
-    $ofd.Filter = "SSH Keys (*.pem;*.ppk;id_ed25519;id_rsa;id_ecdsa;id_dsa;*_key)|*.pem;*.ppk;id_ed25519;id_rsa;id_ecdsa;id_dsa;*_key|All Files (*.*)|*.*"
-
-    while ($true) {
-        if ($ofd.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
-            return $null
-        }
-
-        $path = $ofd.FileName
-        if (-not (Test-Path $path)) {
-            Write-Warn "Selected file does not exist: $path"
-            continue
-        }
-
-        $firstLine = $null
-        try {
-            $firstLine = (Get-Content -LiteralPath $path -TotalCount 1 -ErrorAction Stop)
-        } catch {
-            Write-Warn "Unable to read file: $path"
-            continue
-        }
-
-        if ($firstLine -match '-----BEGIN (OPENSSH|RSA|EC|DSA|ED25519) PRIVATE KEY-----') {
-            return $path
-        }
-
-        if ($firstLine -match '^PuTTY-User-Key-File-') {
-            Write-Warn "PuTTY key detected (.ppk). Conversion to OpenSSH is required."
-
-            $puttygen = Find-PuTTYgen
-            if (-not $puttygen) {
-                $puttygen = Install-PuTTYgen
-                if (-not $puttygen) {
-                    Write-Err "PuTTYgen is still not available. Please install PuTTY/puttygen manually or select a different key."
-                    continue
-                }
-            }
-
-            $sshDir = Join-Path $HOME ".ssh"
-            if (-not (Test-Path $sshDir)) { New-Item -ItemType Directory -Path $sshDir | Out-Null }
-
-            $name = Read-Text "Enter a name for the converted SSH key (no extension)"
-            if (-not $name) {
-                Write-Warn "Name cannot be empty."
-                continue
-            }
-
-            $dest = Join-Path $sshDir $name
-            if (Test-Path $dest) {
-                Write-Warn "A key with this name already exists: $dest"
-                Write-Warn "Choose a different name."
-                continue
-            }
-
-            Write-Info "Converting PuTTY (.ppk) key to OpenSSH format..."
-            $cmd = "`"$puttygen`" `"$path`" -O private-openssh -o `"$dest`""
-            cmd.exe /c $cmd | Out-Null
-
-            $firstLineOut = $null
-            try {
-                $firstLineOut = (Get-Content -LiteralPath $dest -TotalCount 1 -ErrorAction Stop)
-            } catch {
-                $firstLineOut = $null
-            }
-
-            if ($firstLineOut -and $firstLineOut -match '-----BEGIN (OPENSSH|RSA|EC|DSA|ED25519) PRIVATE KEY-----') {
-                Write-Ok "Converted PuTTY key saved to: $dest"
-                return $dest
-            } else {
-                Write-Err "PuTTY key conversion failed. Please try again or select another key."
-                continue
-            }
-        }
-
-        Write-Warn "The selected file does not look like a supported SSH private key. Please choose another file."
-    }
-}
-
-function Select-SaveFilePath {
-    param(
-        [string]$Title,
-        [string]$DefaultFileName,
-        [string]$InitialDirectory
-    )
-    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue | Out-Null
-    $sfd = New-Object System.Windows.Forms.SaveFileDialog
-    $sfd.Title = $Title
-    if ($InitialDirectory -and (Test-Path $InitialDirectory)) {
-        $sfd.InitialDirectory = $InitialDirectory
-    }
-    if ($DefaultFileName) {
-        $sfd.FileName = $DefaultFileName
-    }
-    $sfd.Filter = "All Files (*.*)|*.*"
-    if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        return $sfd.FileName
-    }
-    return $null
-}
-
-function Test-P12Password([string]$FilePath, [string]$Password) {
-    $openssl = Get-Command "openssl.exe" -ErrorAction SilentlyContinue
-    if (-not $openssl) {
-        Write-Warn "openssl not found; skipping P12 password verification."
-        return $true
-    }
-    & $openssl.Source "pkcs12" "-in" $FilePath "-nokeys" "-passin" "pass:$Password" "-passout" "pass:dummy" 1>$null 2>$null
-    return ($LASTEXITCODE -eq 0)
-}
-
-function Get-P12Alias([string]$FilePath, [string]$Password) {
-    $openssl = Get-Command "openssl.exe" -ErrorAction SilentlyContinue
-    if (-not $openssl) {
+    # 3) Manual GUI entry
+    $conn = Show-ConnectionDialog -Purpose $Purpose
+    if (-not $conn) {
         return $null
     }
 
-    $info = & $openssl.Source "pkcs12" "-in" $FilePath "-nokeys" "-info" "-passin" "pass:$Password" 2>&1
-    if ($LASTEXITCODE -ne 0 -or -not $info) {
-        $info = & $openssl.Source "pkcs12" "-legacy" "-in" $FilePath "-nokeys" "-info" "-passin" "pass:$Password" 2>&1
-    }
-
-    if (-not $info) { return $null }
-
-    foreach ($line in $info) {
-        if ($line -match "friendlyName\s*:\s*(.+)$") {
-            return $Matches[1].Trim()
+    if ($conn.Name) {
+        $profile = [ConnectionProfile]::new($conn.Name,$conn.Host,$conn.User,$conn.Port,$conn.IdentityFile)
+        Save-SSHProfile -Profile $profile
+        $CachedConn.Value = $profile
+        Prepare-HostKey $profile.Host
+        return $profile
+    } else {
+        $obj = [PSCustomObject]@{
+            Name         = ""
+            Host         = $conn.Host
+            User         = $conn.User
+            Port         = $conn.Port
+            IdentityFile = $conn.IdentityFile
         }
+        $CachedConn.Value = $obj
+        Prepare-HostKey $obj.Host
+        return $obj
     }
-    return $null
 }
 
-# ====================
-# FEATURES
-# ====================
+#endregion
 
-function Run-ExportSSHProfile {
-    Show-Banner
-    Write-Host "Export SSH-Config File"
-    $name = Read-Text "Profile name (letters, numbers, dashes only)"
-    if (-not (Test-ProfileNameValid $name)) {
-        Write-Err "Invalid profile name."
-        Pause
+#region P12 helpers (.p12 password check via openssl)
+
+function Test-P12Password {
+    param(
+        [string]$P12Path,
+        [string]$Password
+    )
+
+    if (-not (Test-Path $P12Path)) {
+        Write-ErrorLog ".p12 file not found: $P12Path"
+        return $false
+    }
+
+    $cmd = "echo `"`" | openssl pkcs12 -in `"$P12Path`" -nokeys -passin pass:`"$Password`" -passout pass:`"dummy`""
+    Write-Info "Testing P12 password via: $cmd"
+    $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $cmd" -PassThru -WindowStyle Hidden -Wait
+    if ($proc.ExitCode -eq 0) { return $true }
+
+    # try legacy mode
+    $cmd2 = "echo `"`" | openssl pkcs12 -in `"$P12Path`" -legacy -nokeys -passin pass:`"$Password`" -passout pass:`"dummy`""
+    Write-Info "Testing P12 password (legacy) via: $cmd2"
+    $proc2 = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $cmd2" -PassThru -WindowStyle Hidden -Wait
+    return ($proc2.ExitCode -eq 0)
+}
+
+#endregion
+
+#region Actions (New Server Setup, Create user, Backup/Upload P12, Export Profile, SSH Login)
+
+function Run-NewServerSetup {
+    Write-Info "Run-NewServerSetup invoked."
+
+    $conn = Prompt-Connection -Purpose "New Server (initial root or admin login)" -CachedConn ([ref]$Script:NewServerConn)
+    if (-not $conn) {
+        Show-MessageBoxWarn "No connection selected; New Server Setup cancelled." "New Server Setup"
         return
     }
-    $serverHost = Read-Text "Server IP or Hostname"
-    $user       = Read-Text "SSH Username"
-    $port       = Read-Text "SSH Port (default 22)"
-    if (-not $port) { $port = "22" }
 
-    $ident = ""
-    if (Confirm "Attach SSH private key file to this profile?") {
-        $ident = Select-SSHKeyFile
-        if ($ident) { $Script:LastIdentityPath = $ident }
+    Show-MessageBoxInfo "New Server Setup will create a non-root sudo user, copy SSH keys, test login, and optionally harden sshd." "New Server Setup"
+
+    # Ask for new user name & password via simple dialog
+    $win = New-Window -Title "New User on Remote Server" -Width 420 -Height 260
+    $root = New-StackPanel -Orientation Vertical -Margin 16
+    $root.Children.Add((New-Label -Text "Create a new non-root sudo user on the remote server" -FontSize 14 -Bold $true)) | Out-Null
+
+    $grid = New-Object Windows.Controls.Grid
+    for ($i=0; $i -lt 2; $i++) {
+        $col = New-Object Windows.Controls.ColumnDefinition
+        if ($i -eq 0) { $col.Width = "Auto" } else { $col.Width = "*" }
+        $grid.ColumnDefinitions.Add($col)
     }
 
-    $profile = [pscustomobject]@{
-        Name         = $name
-        Host         = $serverHost
-        User         = $user
-        Port         = $port
-        IdentityFile = $ident
+    function Add-Row($labelText,$control) {
+        $row = New-Object Windows.Controls.RowDefinition
+        $row.Height = "Auto"
+        $rowIndex = $grid.RowDefinitions.Count
+        $grid.RowDefinitions.Add($row)
+
+        $lbl = New-Label -Text $labelText
+        $lbl.Margin = "0,0,8,4"
+
+        [Windows.Controls.Grid]::SetRow($lbl, $rowIndex)
+        [Windows.Controls.Grid]::SetColumn($lbl, 0)
+        [Windows.Controls.Grid]::SetRow($control, $rowIndex)
+        [Windows.Controls.Grid]::SetColumn($control, 1)
+
+        $grid.Children.Add($lbl) | Out-Null
+        $grid.Children.Add($control) | Out-Null
     }
 
-    Save-SSHProfile $profile
-    Pause
+    $tbUser = New-TextBox -Text "nodeadmin"
+    $pwd1   = New-TextBox -IsPassword $true
+    $pwd2   = New-TextBox -IsPassword $true
+
+    Add-Row "New username:" $tbUser
+    Add-Row "Password:"     $pwd1
+    Add-Row "Confirm:"      $pwd2
+
+    $root.Children.Add($grid) | Out-Null
+
+    $btnPanel = New-Object Windows.Controls.StackPanel
+    $btnPanel.Orientation = "Horizontal"
+    $btnPanel.HorizontalAlignment = "Right"
+    $btnPanel.Margin = "0,12,0,0"
+
+    $btnCancel = New-Button -Content "Cancel"
+    $btnCancel.Width = 90
+    $btnCancel.Margin = "0,0,8,0"
+    $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
+
+    $btnOK = New-Button -Content "Create User"
+    $btnOK.Width = 120
+    $btnOK.Add_Click({
+        if (-not $tbUser.Text.Trim()) {
+            Show-MessageBoxWarn "Username cannot be empty." "Validation"
+            return
+        }
+        if (-not $pwd1.Password) {
+            Show-MessageBoxWarn "Password cannot be empty." "Validation"
+            return
+        }
+        if ($pwd1.Password -ne $pwd2.Password) {
+            Show-MessageBoxWarn "Passwords do not match." "Validation"
+            return
+        }
+        $win.DialogResult = $true
+        $win.Close()
+    })
+
+    $btnPanel.Children.Add($btnCancel) | Out-Null
+    $btnPanel.Children.Add($btnOK) | Out-Null
+
+    $root.Children.Add($btnPanel) | Out-Null
+    $win.Content = $root
+    $null = $win.ShowDialog()
+
+    if (-not $win.DialogResult) {
+        Write-Info "User creation dialog cancelled."
+        return
+    }
+
+    $newUser = $tbUser.Text.Trim()
+    $pass    = $pwd1.Password
+    Write-Info "Creating new user '$newUser' on $($conn.Host)."
+
+    $remoteScript = @"
+set -e
+NEWUSER='$newUser'
+
+if id "\$NEWUSER" >/dev/null 2>&1; then
+  echo "User \$NEWUSER already exists. Skipping creation."
+  exit 0
+fi
+
+if command -v useradd >/dev/null 2>&1; then
+  useradd -m -s /bin/bash "\$NEWUSER" || echo "useradd returned non-zero (possibly user already exists). Continuing..."
+elif command -v adduser >/dev/null 2>&1; then
+  adduser --disabled-password --gecos "" "\$NEWUSER" || echo "adduser returned non-zero (possibly user already exists). Continuing..."
+else
+  echo "Neither useradd nor adduser is available on this system."
+  exit 1
+fi
+
+echo "\$NEWUSER:$pass" | chpasswd
+
+if getent group sudo >/dev/null 2>&1; then
+  usermod -aG sudo "\$NEWUSER"
+elif getent group wheel >/dev/null 2>&1; then
+  usermod -aG wheel "\$NEWUSER"
+fi
+
+SRC_KEYS=""
+if [ -f "/root/.ssh/authorized_keys" ]; then
+  SRC_KEYS="/root/.ssh/authorized_keys"
+elif [ -n "\$SUDO_USER" ] && [ -f "/home/\$SUDO_USER/.ssh/authorized_keys" ]; then
+  SRC_KEYS="/home/\$SUDO_USER/.ssh/authorized_keys"
+fi
+
+if [ -n "\$SRC_KEYS" ]; then
+  HOME_DIR=\$(eval echo "~\$NEWUSER")
+  mkdir -p "\$HOME_DIR/.ssh"
+  cp "\$SRC_KEYS" "\$HOME_DIR/.ssh/authorized_keys"
+  chown -R "\$NEWUSER:\$NEWUSER" "\$HOME_DIR/.ssh"
+  chmod 700 "\$HOME_DIR/.ssh"
+  chmod 600 "\$HOME_DIR/.ssh/authorized_keys"
+fi
+
+echo "User \$NEWUSER created and configured."
+"@
+
+    $cmd = "bash -s"
+    $res = Invoke-SshCommand -Host $conn.Host -User $conn.User -Port $conn.Port -IdentityFile $conn.IdentityFile -Command $cmd
+    if ($res.ExitCode -ne 0) {
+        Show-MessageBoxError "Remote user creation script failed:`n$res.StdErr" "New Server Setup"
+        return
+    }
+
+    Write-Info "Remote user script output: $($res.StdOut)"
+    Show-MessageBoxInfo "New user '$newUser' created on $($conn.Host)." "New Server Setup"
+
+    # optional: ask to export profile & test login
+    if (Show-Confirm "Do you want to save an SSH profile for '$newUser' now?" "New User Profile" $true) {
+        $pname = "$($conn.Host)-$newUser"
+        $profile = [ConnectionProfile]::new($pname,$conn.Host,$newUser,$conn.Port,$conn.IdentityFile)
+        Save-SSHProfile -Profile $profile
+        if (Show-Confirm "Do you want to launch an SSH session for '$newUser' now?" "Launch SSH" $false) {
+            $sshCmd = "ssh"
+            $args   = @()
+            if ($conn.IdentityFile) { $args += "-i `"$($conn.IdentityFile)`"" }
+            $args += "-p $($conn.Port) $newUser@$($conn.Host)"
+            Start-Process "powershell.exe" "-NoLogo -NoExit -Command $sshCmd $($args -join ' ')" | Out-Null
+        }
+    }
+}
+
+function Run-CreateNonRootUser {
+    Write-Info "Run-CreateNonRootUser invoked."
+    Run-NewServerSetup
 }
 
 function Run-BackupP12 {
-    $conn = Prompt-Connection "Old Server (P12 backup source)" ([ref]$Script:OldServerConn)
-    if (-not $conn) { Pause; return }
+    Write-Info "Run-BackupP12 invoked."
 
-    Show-Banner
-    Write-Host "Scanning for .p12 files on old server (up to 5 levels deep)..."
-    Write-Host
-
-    $remoteCmd = "cd ~; find . -maxdepth 5 -type f -name '*.p12' ! -path '*\/hash\/*' ! -path '*\/ordinal\/*'"
-    $paths = Invoke-SshCommand $conn $remoteCmd 2>$null
-
-    if (-not $paths) {
-        Write-Warn "No .p12 files found on remote server."
-        Pause
+    $conn = Prompt-Connection -Purpose "Old Server (P12 backup source)" -CachedConn ([ref]$Script:OldServerConn)
+    if (-not $conn) {
+        Show-MessageBoxWarn "No connection selected; backup cancelled." "Backup P12"
         return
     }
 
-    $list = $paths -split "`n" | Where-Object { $_ -and ($_ -ne ".") }
-    $list = $list | Sort-Object
-    $list = $list | ForEach-Object { $_.Trim() }
-
-    if (-not $list -or $list.Count -eq 0) {
-        Write-Warn "No .p12 files found."
-        Pause
+    $remoteFind = "cd ~; find . -maxdepth 5 -type f -name '*.p12' ! -path '*\/hash\/*' ! -path '*\/ordinal\/*'"
+    $res = Invoke-SshCommand -Host $conn.Host -User $conn.User -Port $conn.Port -IdentityFile $conn.IdentityFile -Command $remoteFind
+    if ($res.ExitCode -ne 0 -or -not $res.StdOut.Trim()) {
+        Show-MessageBoxWarn "No .p12 files found on the remote server." "Backup P12"
         return
     }
 
-    $index = 0
-    while ($true) {
-        Show-Banner
-        Write-Host "Select a .p12 file to download from old server:"
-        Write-Host
-        for ($i = 0; $i -lt $list.Count; $i++) {
-            $line = $list[$i]
-            if ($i -eq $index) {
-                Write-Host ("> " + $line) -ForegroundColor Green
-            } else {
-                Write-Host ("  " + $line)
-            }
-        }
-        Write-Host
-        Write-Host "Use Up/Down and Enter. Esc to cancel."
+    $paths = $res.StdOut.Trim().Split("`n") | Where-Object { $_ -and $_ -ne "." } | Sort-Object
+    Write-Info "Remote .p12 files: $($paths -join ', ')"
 
-        $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-        if ($key.VirtualKeyCode -eq 27) { return }
-
-        switch ($key.VirtualKeyCode) {
-            38 { if ($index -gt 0) { $index-- } }
-            40 { if ($index -lt $list.Count - 1) { $index++ } }
-            13 {
-                $chosen = $list[$index]
-                $localDir = Join-Path $HOME "Downloads"
-                if (-not (Test-Path $localDir)) {
-                    New-Item -ItemType Directory -Path $localDir | Out-Null
-                }
-                $localPath = Join-Path $localDir ([IO.Path]::GetFileName($chosen))
-                Invoke-ScpDownload $conn $chosen $localPath
-                Write-Ok "P12 file downloaded to: $localPath"
-                Pause
-                return
-            }
-        }
+    # simple list dialog
+    $win = New-Window -Title "Select Remote .p12 File" -Width 500 -Height 360
+    $root = New-StackPanel -Orientation Vertical -Margin 16
+    $root.Children.Add((New-Label -Text "Select a .p12 file to download from $($conn.Host)" -FontSize 14 -Bold $true)) | Out-Null
+    $lb = New-Object Windows.Controls.ListBox
+    $lb.Margin = "0,8,0,8"
+    $lb.Background = $Color_Panel
+    $lb.Foreground = $Color_Text
+    foreach ($p in $paths) {
+        $lb.Items.Add($p) | Out-Null
     }
+    $root.Children.Add($lb) | Out-Null
+
+    $btnPanel = New-Object Windows.Controls.StackPanel
+    $btnPanel.Orientation = "Horizontal"
+    $btnPanel.HorizontalAlignment = "Right"
+
+    $btnCancel = New-Button -Content "Cancel"
+    $btnCancel.Width = 90
+    $btnCancel.Margin = "0,0,8,0"
+    $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
+
+    $btnOK = New-Button -Content "Download"
+    $btnOK.Width = 120
+    $btnOK.Add_Click({
+        if (-not $lb.SelectedItem) {
+            Show-MessageBoxWarn "Please select a .p12 file." "Backup P12"
+            return
+        }
+        $win.DialogResult = $true
+        $win.Close()
+    })
+
+    $btnPanel.Children.Add($btnCancel) | Out-Null
+    $btnPanel.Children.Add($btnOK) | Out-Null
+    $root.Children.Add($btnPanel) | Out-Null
+
+    $win.Content = $root
+    $null = $win.ShowDialog()
+
+    if (-not $win.DialogResult) {
+        Write-Info "User cancelled .p12 download selection."
+        return
+    }
+
+    $selectedPath = [string]$lb.SelectedItem
+    $localDir = Join-Path $Script:HomeDir "Downloads"
+    if (-not (Test-Path $localDir)) {
+        New-Item -ItemType Directory -Path $localDir -Force | Out-Null
+    }
+    $localPath = Join-Path $localDir ([System.IO.Path]::GetFileName($selectedPath))
+
+    $res2 = Invoke-ScpDownload -Host $conn.Host -User $conn.User -Port $conn.Port -IdentityFile $conn.IdentityFile -RemotePath $selectedPath -LocalPath $localPath
+    if ($res2.ExitCode -ne 0) {
+        Show-MessageBoxError "Failed to download .p12 file:`n$res2.StdErr" "Backup P12"
+        return
+    }
+
+    Show-MessageBoxInfo "P12 file downloaded to: $localPath" "Backup P12"
 }
 
 function Run-UploadP12 {
-    $file = $null
+    Write-Info "Run-UploadP12 invoked."
 
-    if ($Script:LastP12Path -and (Test-Path $Script:LastP12Path)) {
-        if (Confirm ("Reuse last selected .p12 file? `"$($Script:LastP12Path)`"")) {
-            $file = $Script:LastP12Path
-        }
-    }
+    $p12 = Select-P12File
+    if (-not $p12) { return }
 
-    if (-not $file) {
-        $file = Select-LocalP12File
-    }
+    # ask for password & verify
+    $win = New-Window -Title "Verify P12 Password" -Width 420 -Height 220
+    $root = New-StackPanel -Orientation Vertical -Margin 16
+    $root.Children.Add((New-Label -Text "Enter the password for the selected .p12 file:" -FontSize 13 -Bold $true)) | Out-Null
+    $pwdBox = New-TextBox -IsPassword $true
+    $root.Children.Add($pwdBox) | Out-Null
 
-    if (-not $file) {
-        Write-Warn "No file selected."
-        Pause
-        return
-    }
-    Write-Ok "Selected: $file"
-    $Script:LastP12Path = $file
-
-    $maxAttempts = 5
-    $pw = $null
-    $alias = $null
-    $ok = $false
-
-    for ($i = 1; $i -le $maxAttempts; $i++) {
-        $pw = Read-PasswordText "Enter .p12 password (attempt $i of $maxAttempts)"
-        if (-not $pw) {
-            Write-Warn "Empty password not allowed."
-            continue
-        }
-
-        if (Test-P12Password $file $pw) {
-            Write-Ok "P12 password verified locally."
-            $alias = Get-P12Alias $file $pw
-            if ($alias) {
-                Write-Ok "P12 alias (friendlyName): $alias"
-                Write-Warn "Make sure to write this alias down and document it."
-            } else {
-                Write-Warn "No friendlyName/alias found in this P12."
-            }
-            $ok = $true
-            break
-        } else {
-            Write-Err "Incorrect P12 password."
-        }
-    }
-
-    if (-not $ok) {
-        Write-Err "Too many incorrect attempts. Aborting upload."
-        Pause
-        return
-    }
-
-    $conn = Prompt-Connection "New Server (P12 upload target)" ([ref]$Script:NewServerConn)
-    if (-not $conn) { Pause; return }
-
-    $remoteDest = "~/"
-    Invoke-ScpUpload $conn $file $remoteDest
-    Write-Ok "P12 file uploaded to home directory on remote server (~/)."
-    Write-Host "Remote path will resolve to:"
-    Write-Host "  /root           if logged in as root"
-    Write-Host "  /home/<user>    if logged in as a normal user"
-
-    if ($alias) {
-        Write-Host
-        Write-Info "Reminder: alias for this P12 is: $alias"
-    }
-
-    Pause
-}
-
-function Run-NewServerSetup {
-    $conn = Prompt-Connection "New Server (initial root or admin login)" ([ref]$Script:NewServerConn)
-    if (-not $conn) { Pause; return }
-
-    Show-Banner
-    Write-Host "New Server Setup"
-    Write-Host
-    Write-Host "This step can:"
-    Write-Host "  - Create a new non-root sudo user on the remote Linux server"
-    Write-Host "  - Copy SSH authorized_keys from root or SUDO_USER if available"
-    Write-Host "  - Test SSH login as the new user"
-    Write-Host "  - Optionally harden sshd to disable root SSH and lock root password"
-    Write-Host
-
-    if (-not (Confirm "Create a new non-root sudo user now? (recommended)" $false)) {
-        Write-Warn "Skipping non-root user creation. Root SSH login will remain enabled."
-        Pause
-        return
-    }
-
-    $newUser = Read-Text "Enter new username (default: nodeadmin)"
-    if (-not $newUser) { $newUser = "nodeadmin" }
-
-    $pw1 = Read-PasswordText "Enter password for $newUser"
-    $pw2 = Read-PasswordText "Confirm password"
-    if ($pw1 -ne $pw2) {
-        Write-Err "Passwords do not match."
-        Pause
-        return
-    }
-
-    Write-Info "Creating non-root user '$newUser' on remote server..."
-    $remoteUserScript = @"
-set -e
-NEWUSER='$newUser'
-
-if id "\$NEWUSER" >/dev/null 2>&1; then
-  echo "User \$NEWUSER already exists. Skipping creation."
-  exit 0
-fi
-
-if command -v useradd >/dev/null 2>&1; then
-  useradd -m -s /bin/bash "$NEWUSER" || echo "useradd returned non-zero (possibly user already exists). Continuing..."
-elif command -v adduser >/dev/null 2>&1; then
-  adduser --disabled-password --gecos "" "$NEWUSER" || echo "adduser returned non-zero (possibly user already exists). Continuing..."
-else
-  echo "Neither useradd nor adduser is available on this system."
-  exit 1
-fi
-
-echo "`$NEWUSER:$pw1" | chpasswd
-
-if getent group sudo >/dev/null 2>&1; then
-  usermod -aG sudo "\$NEWUSER"
-elif getent group wheel >/dev/null 2>&1; then
-  usermod -aG wheel "\$NEWUSER"
-fi
-
-SRC_KEYS=""
-if [ -f "/root/.ssh/authorized_keys" ]; then
-  SRC_KEYS="/root/.ssh/authorized_keys"
-elif [ -n "\$SUDO_USER" ] && [ -f "/home/\$SUDO_USER/.ssh/authorized_keys" ]; then
-  SRC_KEYS="/home/\$SUDO_USER/.ssh/authorized_keys"
-fi
-
-if [ -n "\$SRC_KEYS" ]; then
-  HOME_DIR="/home/`$NEWUSER"
-  mkdir -p "$HOME_DIR/.ssh"
-  cp "$SRC_KEYS" "$HOME_DIR/.ssh/authorized_keys"
-  chown -R "`$NEWUSER:`$NEWUSER" "$HOME_DIR/.ssh"
-  chmod 700 "$HOME_DIR/.ssh"
-  chmod 600 "$HOME_DIR/.ssh/authorized_keys"
-fi
-
-echo "User \$NEWUSER created and configured."
-"@
-
-    $args = Build-SshBaseArgs $conn
-    $args += ("{0}@{1}" -f $conn.User, $conn.Host)
-    $args += "bash -s"
-
-    $maxRetries = 1
-    $attempt    = 0
-    $hostName   = $conn.Host
-    $success    = $false
-
-    while ($attempt -le $maxRetries -and -not $success) {
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName               = "ssh"
-        $psi.Arguments              = [string]::Join(" ", $args)
-        $psi.RedirectStandardInput  = $true
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError  = $true
-        $psi.UseShellExecute        = $false
-        $psi.CreateNoWindow         = $false
-
-        $proc = [System.Diagnostics.Process]::Start($psi)
-        $proc.StandardInput.WriteLine($remoteUserScript)
-        $proc.StandardInput.Close()
-        $out = $proc.StandardOutput.ReadToEnd()
-        $err = $proc.StandardError.ReadToEnd()
-        $proc.WaitForExit()
-
-        if ($proc.ExitCode -eq 0) {
-            if ($out) { Write-Host $out }
-            if ($err) { Write-Host $err }
-            $success = $true
-        }
-        elseif ($err -like "*REMOTE HOST IDENTIFICATION HAS CHANGED!*" -and $attempt -lt $maxRetries) {
-            Write-Warn "Host key mismatch detected for $hostName. Cleaning known_hosts and retrying..."
-            & ssh-keygen -R $hostName | Out-Null
-            $attempt++
-            continue
-        }
-        else {
-            if ($out) { Write-Host $out }
-            if ($err) { Write-Host $err }
-            Write-Err "Remote user creation script failed (exit $($proc.ExitCode))."
-            Pause
+    $btnPanel = New-Object Windows.Controls.StackPanel
+    $btnPanel.Orientation = "Horizontal"
+    $btnPanel.HorizontalAlignment = "Right"
+    $btnCancel = New-Button -Content "Cancel"
+    $btnCancel.Width = 90
+    $btnCancel.Margin = "0,0,8,0"
+    $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
+    $btnOK = New-Button -Content "Verify"
+    $btnOK.Width = 120
+    $btnOK.Add_Click({
+        if (-not $pwdBox.Password) {
+            Show-MessageBoxWarn "Password cannot be empty." "P12 Password"
             return
         }
-    }
-
-    Write-Ok "Remote user '$newUser' created (or already present)."
-
-    Write-Info "Testing SSH login as $newUser..."
-    $testConn = [pscustomobject]@{
-        Host         = $conn.Host
-        User         = $newUser
-        Port         = $conn.Port
-        IdentityFile = $conn.IdentityFile
-    }
-
-    $testArgs = Build-SshBaseArgs $testConn
-    $testArgs += ("{0}@{1}" -f $testConn.User, $testConn.Host)
-    $testArgs += "echo ok"
-
-    $testExit = Invoke-OpenSSHWithKnownHostsFix -Exe "ssh" -Args $testArgs -HostName $testConn.Host -MaxRetries 1
-    if ($testExit -eq 0) {
-        Write-Ok "SSH login as '$newUser' succeeded."
-        $newLoginWorks = $true
-    } else {
-        Write-Warn "SSH login as '$newUser' failed."
-        $newLoginWorks = $false
-    }
-
-    if (-not $newLoginWorks) {
-        Write-Warn "New user login did not succeed. Root SSH hardening is NOT recommended."
-        if (-not (Confirm "Proceed to harden sshd anyway (NOT recommended)?")) {
-            Pause
+        if (-not (Test-P12Password -P12Path $p12 -Password $pwdBox.Password)) {
+            Show-MessageBoxError "Incorrect P12 password." "P12 Password"
             return
         }
-    } else {
-        if (-not (Confirm "Disable root SSH login and lock root password now?")) {
-            Pause
+        $win.DialogResult = $true
+        $win.Close()
+    })
+    $btnPanel.Children.Add($btnCancel) | Out-Null
+    $btnPanel.Children.Add($btnOK) | Out-Null
+    $root.Children.Add($btnPanel) | Out-Null
+    $win.Content = $root
+    $null = $win.ShowDialog()
+
+    if (-not $win.DialogResult) {
+        Write-Info "User cancelled P12 password verification."
+        return
+    }
+
+    Show-MessageBoxInfo "P12 password verified. Next select the target server." "Upload P12"
+
+    $conn = Prompt-Connection -Purpose "New Server (P12 upload target)" -CachedConn ([ref]$Script:NewServerConn)
+    if (-not $conn) {
+        Show-MessageBoxWarn "No connection selected; upload cancelled." "Upload P12"
+        return
+    }
+
+    $res = Invoke-ScpUpload -Host $conn.Host -User $conn.User -Port $conn.Port -IdentityFile $conn.IdentityFile -LocalPath $p12 -RemotePath "~/"
+    if ($res.ExitCode -ne 0) {
+        Show-MessageBoxError "Failed to upload P12 file:`n$res.StdErr" "Upload P12"
+        return
+    }
+
+    Show-MessageBoxInfo "P12 file uploaded to remote home directory (~)." "Upload P12"
+}
+
+function Run-ExportSSHProfile {
+    Write-Info "Run-ExportSSHProfile invoked."
+
+    $win = New-Window -Title "Export SSH Profile" -Width 420 -Height 320
+    $root = New-StackPanel -Orientation Vertical -Margin 16
+
+    $root.Children.Add((New-Label -Text "Create a new SSH profile file in $($Script:ProfilesDir)" -FontSize 14 -Bold $true)) | Out-Null
+
+    $grid = New-Object Windows.Controls.Grid
+    for ($i=0; $i -lt 2; $i++) {
+        $col = New-Object Windows.Controls.ColumnDefinition
+        if ($i -eq 0) { $col.Width = "Auto" } else { $col.Width = "*" }
+        $grid.ColumnDefinitions.Add($col)
+    }
+
+    function Add-Row([string]$labelText,$control) {
+        $row = New-Object Windows.Controls.RowDefinition
+        $row.Height = "Auto"
+        $rowIndex = $grid.RowDefinitions.Count
+        $grid.RowDefinitions.Add($row)
+
+        $lbl = New-Label -Text $labelText
+        $lbl.Margin = "0,0,8,4"
+
+        [Windows.Controls.Grid]::SetRow($lbl, $rowIndex)
+        [Windows.Controls.Grid]::SetColumn($lbl, 0)
+        [Windows.Controls.Grid]::SetRow($control, $rowIndex)
+        [Windows.Controls.Grid]::SetColumn($control, 1)
+
+        $grid.Children.Add($lbl) | Out-Null
+        $grid.Children.Add($control) | Out-Null
+    }
+
+    $tbName  = New-TextBox
+    $tbHost  = New-TextBox
+    $tbUser  = New-TextBox
+    $tbPort  = New-TextBox -Text "22"
+
+    $spIdent = New-Object Windows.Controls.StackPanel
+    $spIdent.Orientation = "Horizontal"
+    $tbIdent = New-TextBox
+    $tbIdent.Width = 230
+    $btnBrowse = New-Button -Content "Browse..."
+    $btnBrowse.Width = 100
+    $btnBrowse.Margin = "8,0,0,0"
+    $btnBrowse.Add_Click({
+        $path = Select-SSHKeyFile
+        if ($path) { $tbIdent.Text = $path }
+    })
+    $spIdent.Children.Add($tbIdent) | Out-Null
+    $spIdent.Children.Add($btnBrowse) | Out-Null
+
+    Add-Row "Profile Name:" $tbName
+    Add-Row "Server IP/Host:" $tbHost
+    Add-Row "Username:" $tbUser
+    Add-Row "Port:" $tbPort
+    Add-Row "SSH Key (optional):" $spIdent
+
+    $root.Children.Add($grid) | Out-Null
+
+    $btnPanel = New-Object Windows.Controls.StackPanel
+    $btnPanel.Orientation = "Horizontal"
+    $btnPanel.HorizontalAlignment = "Right"
+    $btnPanel.Margin = "0,12,0,0"
+
+    $btnCancel = New-Button -Content "Cancel"
+    $btnCancel.Width = 90
+    $btnCancel.Margin = "0,0,8,0"
+    $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
+
+    $btnOK = New-Button -Content "Save Profile"
+    $btnOK.Width = 120
+    $btnOK.Add_Click({
+        if (-not $tbName.Text.Trim()) {
+            Show-MessageBoxWarn "Profile name is required." "Export Profile"
             return
         }
-    }
-
-    Write-Info "Hardening sshd on remote server..."
-    $remoteHardenScript = @"
-set -e
-
-SSHD_CFG="/etc/ssh/sshd_config"
-BACKUP="/etc/ssh/sshd_config.$(date +%Y%m%d-%H%M%S).bak"
-
-cp -a "\$SSHD_CFG" "\$BACKUP"
-
-# Comment existing PermitRootLogin lines
-sed -i 's/^[[:space:]]*PermitRootLogin[[:space:]].*/# &/I' "\$SSHD_CFG"
-
-# In any sshd_config.d files, comment PermitRootLogin yes
-if ls /etc/ssh/sshd_config.d/*.conf >/dev/null 2>&1; then
-  sed -i 's/^[[:space:]]*PermitRootLogin[[:space:]]*yes/# &/I' /etc/ssh/sshd_config.d/*.conf || true
-fi
-
-# Remove any existing 'Match User root' block at end (simple approach)
-if grep -qi '^[[:space:]]*Match[[:space:]]\+User[[:space:]]\+root' "\$SSHD_CFG"; then
-  awk '
-  BEGIN{del=0}
-  /^Match[[:space:]]+User[[:space:]]+root/{del=1}
-  !del{print}
-  ' "\$SSHD_CFG" > "\$SSHD_CFG.tmp"
-  mv "\$SSHD_CFG.tmp" "\$SSHD_CFG"
-fi
-
-{
-  echo ""
-  echo "PermitRootLogin no"
-  echo ""
-  echo "Match User root"
-  echo "  PasswordAuthentication no"
-  echo "  PermitRootLogin no"
-} >> "\$SSHD_CFG"
-
-if ! sshd -t 2>/tmp/sshd_test.err; then
-  echo "sshd config test FAILED. Restoring backup."
-  cat /tmp/sshd_test.err
-  mv -f "\$BACKUP" "\$SSHD_CFG"
-  exit 1
-fi
-
-if command -v systemctl >/dev/null 2>&1; then
-  systemctl restart ssh || systemctl restart sshd
-else
-  service ssh restart 2>/dev/null || service sshd restart 2>/dev/null
-fi
-
-passwd -l root >/dev/null 2>&1 || true
-if [ -f "/root/.ssh/authorized_keys" ]; then
-  mv /root/.ssh/authorized_keys /root/.ssh/authorized_keys.disabled 2>/dev/null || true
-fi
-
-echo "Root SSH login disabled, root password locked, sshd restarted."
-"@
-
-    $hArgs = Build-SshBaseArgs $conn
-    $hArgs += ("{0}@{1}" -f $conn.User, $conn.Host)
-    $hArgs += "bash -s"
-
-    $hPsi = New-Object System.Diagnostics.ProcessStartInfo
-    $hPsi.FileName = "ssh"
-    $hPsi.Arguments = [string]::Join(" ", $hArgs)
-    $hPsi.RedirectStandardInput = $true
-    $hPsi.RedirectStandardOutput = $true
-    $hPsi.RedirectStandardError  = $true
-    $hPsi.UseShellExecute = $false
-    $hPsi.CreateNoWindow = $false
-
-    $hProc = [System.Diagnostics.Process]::Start($hPsi)
-    $hProc.StandardInput.WriteLine($remoteHardenScript)
-    $hProc.StandardInput.Close()
-    $hOut = $hProc.StandardOutput.ReadToEnd()
-    $hErr = $hProc.StandardError.ReadToEnd()
-    $hProc.WaitForExit()
-
-    if ($hOut) { Write-Host $hOut }
-    if ($hErr) { Write-Host $hErr }
-    if ($hProc.ExitCode -ne 0) {
-        Write-Err "Remote sshd hardening script failed (exit $($hProc.ExitCode))."
-        Pause
-        return
-    }
-
-    Write-Ok "Root SSH login disabled and root password locked on remote server."
-
-    # 5) Export profile for the new user and offer to launch
-    if (Confirm "Export SSH connection profile for new user '$newUser'?") {
-        $serverHost  = $conn.Host
-        $port        = $conn.Port
-        $ident       = $conn.IdentityFile
-        $profileName = Read-Text "Profile name for this new user (default: $newUser)"
-        if (-not $profileName) { $profileName = $newUser }
-
-        $profile = [pscustomobject]@{
-            Name         = $profileName
-            Host         = $serverHost
-            User         = $newUser
-            Port         = $port
-            IdentityFile = $ident
-        }
-
-        Save-SSHProfile $profile
-
-        if (Confirm "Launch SSH for this new profile in a new window now?") {
-            if (Get-Command wt.exe -ErrorAction SilentlyContinue) {
-                $argsList = @("new-window", "ssh")
-                if ($ident) { $argsList += @("-i", $ident) }
-                $argsList += @("-p", $port, ("{0}@{1}" -f $newUser, $serverHost))
-                Start-Process wt.exe -ArgumentList $argsList
-            } else {
-                $cmdPieces = @("ssh")
-                if ($ident) { $cmdPieces += @("-i", $ident) }
-                $cmdPieces += @("-p", $port, ("{0}@{1}" -f $newUser, $serverHost))
-                $cmdString = $cmdPieces -join " "
-                Start-Process "powershell.exe" -ArgumentList "-NoExit", "-Command", $cmdString
-            }
-            Write-Ok "SSH session launched for $newUser."
-        }
-    }
-    Pause
-}
-
-# 5) CREATE NON-ROOT USER (REMOTE)
-function Run-CreateNonRootUser {
-    $conn = Prompt-Connection "Server (for non-root user creation)" ([ref]$Script:NewServerConn)
-    if (-not $conn) { Pause; return }
-
-    Show-Banner
-    Write-Host "Remote Non-Root User Creation"
-    Write-Host
-    $newUser = Read-Text "Enter new username (default: nodeadmin)"
-    if (-not $newUser) { $newUser = "nodeadmin" }
-
-    $pw1 = Read-PasswordText "Enter password for $newUser"
-    $pw2 = Read-PasswordText "Confirm password"
-    if ($pw1 -ne $pw2) {
-        Write-Err "Passwords do not match."
-        Pause
-        return
-    }
-
-    Write-Host
-    Write-Host "The following commands will run on the remote server:"
-    Write-Host "  - create user"
-    Write-Host "  - add to sudo or wheel group (if exists)"
-    Write-Host "  - copy authorized_keys from root or SUDO_USER if available"
-    Write-Host
-    if (-not (Confirm "Proceed with remote user creation?")) { return }
-
-    $remoteUserScript = @"
-set -e
-NEWUSER='$newUser'
-
-if id "\$NEWUSER" >/dev/null 2>&1; then
-  echo "User \$NEWUSER already exists. Skipping creation."
-  exit 0
-fi
-
-if command -v useradd >/dev/null 2>&1; then
-  useradd -m -s /bin/bash "$NEWUSER" || echo "useradd returned non-zero (possibly user already exists). Continuing..."
-elif command -v adduser >/dev/null 2>&1; then
-  adduser --disabled-password --gecos "" "$NEWUSER" || echo "adduser returned non-zero (possibly user already exists). Continuing..."
-else
-  echo "Neither useradd nor adduser is available on this system."
-  exit 1
-fi
-
-echo "`$NEWUSER:$pw1" | chpasswd
-
-if getent group sudo >/dev/null 2>&1; then
-  usermod -aG sudo "\$NEWUSER"
-elif getent group wheel >/dev/null 2>&1; then
-  usermod -aG wheel "\$NEWUSER"
-fi
-
-SRC_KEYS=""
-if [ -f "/root/.ssh/authorized_keys" ]; then
-  SRC_KEYS="/root/.ssh/authorized_keys"
-elif [ -n "\$SUDO_USER" ] && [ -f "/home/\$SUDO_USER/.ssh/authorized_keys" ]; then
-  SRC_KEYS="/home/\$SUDO_USER/.ssh/authorized_keys"
-fi
-
-if [ -n "\$SRC_KEYS" ]; then
-  HOME_DIR="/home/`$NEWUSER"
-  mkdir -p "$HOME_DIR/.ssh"
-  cp "$SRC_KEYS" "$HOME_DIR/.ssh/authorized_keys"
-  chown -R "`$NEWUSER:`$NEWUSER" "$HOME_DIR/.ssh"
-  chmod 700 "$HOME_DIR/.ssh"
-  chmod 600 "$HOME_DIR/.ssh/authorized_keys"
-fi
-
-echo "User \$NEWUSER created and configured."
-"@
-
-    $args = Build-SshBaseArgs $conn
-    $args += ("{0}@{1}" -f $conn.User, $conn.Host)
-    $args += "bash -s"
-
-    $maxRetries = 1
-    $attempt    = 0
-    $hostName   = $conn.Host
-    $success    = $false
-
-    while ($attempt -le $maxRetries -and -not $success) {
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName               = "ssh"
-        $psi.Arguments              = [string]::Join(" ", $args)
-        $psi.RedirectStandardInput  = $true
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError  = $true
-        $psi.UseShellExecute        = $false
-        $psi.CreateNoWindow         = $false
-
-        $proc = [System.Diagnostics.Process]::Start($psi)
-        $proc.StandardInput.WriteLine($remoteUserScript)
-        $proc.StandardInput.Close()
-        $out = $proc.StandardOutput.ReadToEnd()
-        $err = $proc.StandardError.ReadToEnd()
-        $proc.WaitForExit()
-
-        if ($out) { Write-Host $out }
-        if ($err) { Write-Host $err }
-
-        if ($proc.ExitCode -eq 0) {
-            $success = $true
-        }
-        elseif ($err -like "*REMOTE HOST IDENTIFICATION HAS CHANGED!*" -and $attempt -lt $maxRetries) {
-            Write-Warn "Host key mismatch detected for $hostName during user creation. Cleaning known_hosts and retrying..."
-            & ssh-keygen -R $hostName | Out-Null
-            $attempt++
-            continue
-        }
-        else {
-            Write-Err "Remote user creation script failed (exit $($proc.ExitCode))."
-            Pause
+        if (-not $tbHost.Text.Trim() -or -not $tbUser.Text.Trim()) {
+            Show-MessageBoxWarn "Host and Username are required." "Export Profile"
             return
         }
+        $win.DialogResult = $true
+        $win.Close()
+    })
+
+    $btnPanel.Children.Add($btnCancel) | Out-Null
+    $btnPanel.Children.Add($btnOK) | Out-Null
+    $root.Children.Add($btnPanel) | Out-Null
+    $win.Content = $root
+    $null = $win.ShowDialog()
+
+    if (-not $win.DialogResult) {
+        Write-Info "Export SSH Profile cancelled."
+        return
     }
 
-    if ($success) {
-        Write-Ok "Remote user creation script executed."
-    }
-    Pause
+    $profile = [ConnectionProfile]::new(
+        $tbName.Text.Trim(),
+        $tbHost.Text.Trim(),
+        $tbUser.Text.Trim(),
+        (if ($tbPort.Text.Trim()) { $tbPort.Text.Trim() } else { "22" }),
+        $tbIdent.Text.Trim()
+    )
+    Save-SSHProfile -Profile $profile
+    Show-MessageBoxInfo "Profile saved to: $(Get-ProfilePath -Name $profile.Name)" "Export SSH Profile"
 }
 
-# 6) EXPORT TO PUTTY PRIVATE KEY
-function Run-ExportPuTTYKey {
-    Show-Banner
-    Write-Host "Export to PuTTY Private Key (.ppk)"
-
-    $source = Select-SSHKeyFile
-    if (-not $source) {
-        Write-Warn "No key selected."
-        Pause
-        return
-    }
-    if (-not (Test-Path $source)) {
-        Write-Err "File not found: $source"
-        Pause
-        return
-    }
-
-    $defaultOut = [IO.Path]::ChangeExtension($source, ".ppk")
-    $initialDir = [System.IO.Path]::GetDirectoryName($source)
-    $defaultName = [System.IO.Path]::GetFileName($defaultOut)
-
-    $dest = Select-SaveFilePath -Title "Save PuTTY private key (.ppk)" -DefaultFileName $defaultName -InitialDirectory $initialDir
-    if (-not $dest) {
-        Write-Warn "PuTTY export cancelled."
-        Pause
-        return
-    }
-
-    $puttygen = Get-Command "puttygen.exe" -ErrorAction SilentlyContinue
-    if (-not $puttygen) {
-        Write-Err "puttygen.exe not found in PATH. Install PuTTY or PuTTYgen."
-        Pause
-        return
-    }
-
-    & $puttygen.Source $source "-O" "private" "-o" $dest
-    if ($LASTEXITCODE -eq 0) {
-        Write-Ok "PuTTY key saved to: $dest"
-    } else {
-        Write-Err "PuTTY key export failed."
-    }
-    Pause
-}
-
-# 7) SERVER LOGIN (NEW WINDOW)
 function Run-ServerLogin {
-    $conn = Prompt-Connection "Server Login" ([ref]$Script:NewServerConn)
-    if (-not $conn) { Pause; return }
+    Write-Info "Run-ServerLogin invoked."
 
-    if (Confirm "Launch SSH in new Windows Terminal window now?") {
-        if (Get-Command wt.exe -ErrorAction SilentlyContinue) {
-            $args = @("new-window", "ssh")
-            if ($conn.IdentityFile) {
-                $args += @("-i", $conn.IdentityFile)
-            }
-            $args += @("-p", $conn.Port, ("{0}@{1}" -f $conn.User, $conn.Host))
-            Start-Process wt.exe -ArgumentList $args
-        } else {
-            $cmdPieces = @("ssh")
-            if ($conn.IdentityFile) { $cmdPieces += @("-i", $conn.IdentityFile) }
-            $cmdPieces += @("-p", $conn.Port, ("{0}@{1}" -f $conn.User, $conn.Host))
-            $cmdString = $cmdPieces -join " "
-            Start-Process "powershell.exe" -ArgumentList "-NoExit", "-Command", $cmdString
-        }
-        Write-Ok "SSH session launched in a new window."
+    $conn = Prompt-Connection -Purpose "Server Login" -CachedConn ([ref]$Script:NewServerConn)
+    if (-not $conn) {
+        Show-MessageBoxWarn "No connection selected; login cancelled." "Server Login"
+        return
     }
-    Pause
+
+    $sshCmd = "ssh"
+    $args   = @()
+    if ($conn.IdentityFile) { $args += "-i `"$($conn.IdentityFile)`"" }
+    $args += "-p $($conn.Port) $($conn.User)@$($conn.Host)"
+    Write-Info "Launching interactive ssh session: $sshCmd $($args -join ' ')"
+    Start-Process "powershell.exe" "-NoLogo -NoExit -Command $sshCmd $($args -join ' ')" | Out-Null
 }
 
-# ====================
-# MAIN LOOP
-# ====================
-Show-Intro
+#endregion
 
-while ($true) {
-    $choice = Show-MainMenu
-    switch ($choice) {
-        "New Server Setup" {
-            Run-NewServerSetup
-        }
-        "Create Non-Root User" {
-            Run-CreateNonRootUser
-        }
-        "Backup P12 File (From old server)" {
-            Run-BackupP12
-        }
-        "Upload P12 File" {
-            Run-UploadP12
-        }
-        "Export SSH-Config File" {
-            Run-ExportSSHProfile
-        }
-        "Export to PuTTY Private Key" {
-            Run-ExportPuTTYKey
-        }
-        "Server Login (Launches in new window)" {
-            Run-ServerLogin
-        }
-        "Exit" {
-            break
-        }
-    }
+#region Main GUI
+
+function Show-MainWindow {
+    Write-Info "Launching Server Toolkit main window."
+
+    $win = New-Window -Title "Stardust Collective - Server Toolkit (Windows)" -Width 520 -Height 420
+    $root = New-StackPanel -Orientation Vertical -Margin 16
+
+    $title = New-Label -Text "Stardust Collective - Server Toolkit" -FontSize 18 -Bold $true
+    $title.Foreground = $Color_Accent
+    $root.Children.Add($title) | Out-Null
+
+    $subtitle = New-Label -Text "NodeCloud-style GUI for server setup, users, and P12 handling."
+    $root.Children.Add($subtitle) | Out-Null
+
+    $btnNewServer     = New-Button -Content "New Server Setup"
+    $btnCreateUser    = New-Button -Content "Create Non-Root User"
+    $btnBackupP12     = New-Button -Content "Backup P12 File (From old server)"
+    $btnUploadP12     = New-Button -Content "Upload P12 File"
+    $btnExportProfile = New-Button -Content "Export SSH-Config File"
+    $btnLogin         = New-Button -Content "Server Login (interactive shell)"
+    $btnExit          = New-Button -Content "Exit"
+
+    $btnNewServer.Add_Click({ Run-NewServerSetup })
+    $btnCreateUser.Add_Click({ Run-CreateNonRootUser })
+    $btnBackupP12.Add_Click({ Run-BackupP12 })
+    $btnUploadP12.Add_Click({ Run-UploadP12 })
+    $btnExportProfile.Add_Click({ Run-ExportSSHProfile })
+    $btnLogin.Add_Click({ Run-ServerLogin })
+    $btnExit.Add_Click({ $win.Close() })
+
+    $root.Children.Add($btnNewServer)     | Out-Null
+    $root.Children.Add($btnCreateUser)    | Out-Null
+    $root.Children.Add($btnBackupP12)     | Out-Null
+    $root.Children.Add($btnUploadP12)     | Out-Null
+    $root.Children.Add($btnExportProfile) | Out-Null
+    $root.Children.Add($btnLogin)         | Out-Null
+
+    $root.Children.Add((New-Label -Text "")) | Out-Null
+    $root.Children.Add($btnExit) | Out-Null
+
+    $win.Content = $root
+    $null = $win.ShowDialog()
+    Write-Info "Main window closed."
 }
+
+#endregion
+
+# Entry point
+Write-Info "==== Server Toolkit started ===="
+Show-MainWindow
+Write-Info "==== Server Toolkit ended ===="
