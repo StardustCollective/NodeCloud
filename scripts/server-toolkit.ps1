@@ -212,11 +212,11 @@ class ConnectionProfile {
     [string]$Port
     [string]$IdentityFile
 
-    ConnectionProfile([string]$name,[string]$host,[string]$user,[string]$port,[string]$identity) {
-        $this.Name = $name
-        $this.Host = $host
-        $this.User = $user
-        $this.Port = $port
+    ConnectionProfile([string]$name,[string]$hostName,[string]$user,[string]$port,[string]$identity) {
+        $this.Name        = $name
+        $this.Host        = $hostName
+        $this.User        = $user
+        $this.Port        = $port
         $this.IdentityFile = $identity
     }
 }
