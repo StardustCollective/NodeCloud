@@ -506,7 +506,7 @@ function Prepare-HostKey {
     }
 
     try {
-        Write-Info "Running ssh-keyscan for $HostName:$Port"
+        Write-Info ("Running ssh-keyscan for {0}:{1}" -f $HostName, $Port)
         $scan = & ssh-keyscan -p $Port $HostName 2>$null
         if ($scan) {
             if (-not (Test-Path $Script:KnownHosts)) {
@@ -1096,7 +1096,7 @@ function Harden-SSHRoot {
         [string]$IdentityFile
     )
 
-    Write-Info "Harden-SSHRoot invoked for $User@$HostName:$Port"
+    Write-Info ("Harden-SSHRoot invoked for {0}@{1}:{2}" -f $User, $HostName, $Port)
 
     $hardenScript = @'
 set -e
