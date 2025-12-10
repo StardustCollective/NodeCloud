@@ -933,15 +933,17 @@ function Select-ProfileFromDisk {
 
     $btnPanel = New-Object Windows.Controls.StackPanel
     $btnPanel.Orientation = "Horizontal"
-    $btnPanel.HorizontalAlignment = "Right"
+    $btnPanel.HorizontalAlignment = "Center"
+    $btnPanel.Margin = "0,16,0,0"
 
     $btnCancel = New-Button -Content "Cancel"
-    $btnCancel.Width = 100
-    $btnCancel.Margin = "0,0,12,0"
+    $btnCancel.Width = 120
+    $btnCancel.Margin = "0,0,16,0"
     $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
 
     $btnOK = New-Button -Content "Use Profile"
     $btnOK.Width = 120
+    $btnOK.Margin = "0,0,0,0"
     $btnOK.Add_Click({
         if (-not $lb.SelectedItem) {
             Show-MessageBoxWarn "Please select a profile or click Cancel." "Profile Selection"
@@ -1130,17 +1132,21 @@ function Run-NewServerSetup {
     $btnOK.Margin = "0,0,0,0"
     $btnOK.Add_Click({
         if (-not $tbUser.Text.Trim()) {
+            Write-Warn "New user dialog validation failed: empty username."
             Show-MessageBoxWarn "Username cannot be empty." "Validation"
             return
         }
         if (-not $pwd1.Password) {
+            Write-Warn "New user dialog validation failed: empty password."
             Show-MessageBoxWarn "Password cannot be empty." "Validation"
             return
         }
         if ($pwd1.Password -ne $pwd2.Password) {
+            Write-Warn "New user dialog validation failed: password mismatch."
             Show-MessageBoxWarn "Passwords do not match." "Validation"
             return
         }
+        Write-Info "New user dialog validation passed. Proceeding to create user."
         $win.DialogResult = $true
         $win.Close()
     })
@@ -1153,7 +1159,9 @@ function Run-NewServerSetup {
     $null = $win.ShowDialog()
 
     if (-not $win.DialogResult) {
-        Write-Info "User creation dialog cancelled."
+        $userPreview = $tbUser.Text.Trim()
+        Write-Info "User creation dialog ended without confirmation. DialogResult=$($win.DialogResult); EnteredUser='$userPreview'."
+        Show-MessageBoxWarn "User creation was cancelled. No changes were made on the server." "New Server Setup"
         return
     }
 
