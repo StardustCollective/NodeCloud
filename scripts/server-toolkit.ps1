@@ -1095,50 +1095,50 @@ function Run-NewServerSetup {
     $pass    = $pwd1.Password
     Write-Info "Creating new user '$newUser' on $($conn.Host)."
 
-    $remoteScript = @"
+    $remoteScript = @'
 set -e
-NEWUSER='$newUser'
+NEWUSER='{0}'
 
-if id "\$NEWUSER" >/dev/null 2>&1; then
-  echo "User \$NEWUSER already exists. Skipping creation."
+if id "$NEWUSER" >/dev/null 2>&1; then
+  echo "User $NEWUSER already exists. Skipping creation."
   exit 0
 fi
 
 if command -v useradd >/dev/null 2>&1; then
-  useradd -m -s /bin/bash "\$NEWUSER" || echo "useradd returned non-zero (possibly user already exists). Continuing..."
+  useradd -m -s /bin/bash "$NEWUSER" || echo "useradd returned non-zero (possibly user already exists). Continuing..."
 elif command -v adduser >/dev/null 2>&1; then
-  adduser --disabled-password --gecos "" "\$NEWUSER" || echo "adduser returned non-zero (possibly user already exists). Continuing..."
+  adduser --disabled-password --gecos "" "$NEWUSER" || echo "adduser returned non-zero (possibly user already exists). Continuing..."
 else
   echo "Neither useradd nor adduser is available on this system."
   exit 1
 fi
 
-echo "$($newUser):$($pass)" | chpasswd
+echo "{0}:{1}" | chpasswd
 
 if getent group sudo >/dev/null 2>&1; then
-  usermod -aG sudo "\$NEWUSER"
+  usermod -aG sudo "$NEWUSER"
 elif getent group wheel >/dev/null 2>&1; then
-  usermod -aG wheel "\$NEWUSER"
+  usermod -aG wheel "$NEWUSER"
 fi
 
 SRC_KEYS=""
 if [ -f "/root/.ssh/authorized_keys" ]; then
   SRC_KEYS="/root/.ssh/authorized_keys"
-elif [ -n "\$SUDO_USER" ] && [ -f "/home/\$SUDO_USER/.ssh/authorized_keys" ]; then
-  SRC_KEYS="/home/\$SUDO_USER/.ssh/authorized_keys"
+elif [ -n "$SUDO_USER" ] && [ -f "/home/$SUDO_USER/.ssh/authorized_keys" ]; then
+  SRC_KEYS="/home/$SUDO_USER/.ssh/authorized_keys"
 fi
 
-if [ -n "\$SRC_KEYS" ]; then
-  HOME_DIR=\$(eval echo "~\$NEWUSER")
-  mkdir -p "\$HOME_DIR/.ssh"
-  cp "\$SRC_KEYS" "\$HOME_DIR/.ssh/authorized_keys"
-  chown -R "\$NEWUSER:\$NEWUSER" "\$HOME_DIR/.ssh"
-  chmod 700 "\$HOME_DIR/.ssh"
-  chmod 600 "\$HOME_DIR/.ssh/authorized_keys"
+if [ -n "$SRC_KEYS" ]; then
+  HOME_DIR=$(eval echo "~$NEWUSER")
+  mkdir -p "$HOME_DIR/.ssh"
+  cp "$SRC_KEYS" "$HOME_DIR/.ssh/authorized_keys"
+  chown -R "$NEWUSER:$NEWUSER" "$HOME_DIR/.ssh"
+  chmod 700 "$HOME_DIR/.ssh"
+  chmod 600 "$HOME_DIR/.ssh/authorized_keys"
 fi
 
-echo "User \$NEWUSER created and configured."
-"@
+echo "User $NEWUSER created and configured."
+'@ -f $newUser, $pass
 
     $cmd = "bash -s"
     $res = Invoke-SshCommand -Host $conn.Host -User $conn.User -Port $conn.Port -IdentityFile $conn.IdentityFile -Command $cmd
