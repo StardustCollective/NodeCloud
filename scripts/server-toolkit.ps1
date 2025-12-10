@@ -1066,135 +1066,6 @@ function Test-P12Password {
 
 #endregion
 
-#region Actions (New Server Setup, Create user, Backup/Upload P12, Export Profile, SSH Login)
-
-#region Actions (New Server Setup, Create user, Backup/Upload P12, Export Profile, SSH Login)
-
-function Bootstrap-InteractiveRootSetup {
-    param(
-        [string]$HostName,
-        [string]$Port,
-        [string]$User,
-        [string]$NewUser
-    )
-
-    Write-Info "Interactive bootstrap requested for $User@$HostName to create '$NewUser'."
-
-    $msg = @"
-We'll open an interactive SSH window as $User@$HostName.
-
-1) In that window, type the ROOT SSH password when prompted.
-2) Once you see the shell prompt (e.g. root@host:~#), click YES in the next dialog.
-3) The toolkit will automatically inject the bootstrap commands to create '$NewUser' and set up sudo + SSH keys.
-4) You will still be prompted in the SSH window to set the password for '$NewUser' via 'passwd'.
-
-IMPORTANT: Make sure the SSH window is focused (active) before you click YES.
-"@
-
-    [System.Windows.MessageBox]::Show($msg, "Interactive Bootstrap", 'OK', 'Information') | Out-Null
-
-    # Launch interactive SSH session
-    $sshArgs = @()
-    $sshArgs += "-p $Port"
-    $sshArgs += "$User@$HostName"
-    $cmdLine = "ssh.exe " + ($sshArgs -join " ")
-    Write-Info "Launching interactive SSH for bootstrap: $cmdLine"
-    Start-Process -FilePath "cmd.exe" -ArgumentList "/k $cmdLine" | Out-Null
-
-    # Give the ssh window a moment to appear and allow user to type the root password
-    Start-Sleep -Seconds 3
-
-    # Ask user to confirm they're logged in and ready
-    $ready = [System.Windows.MessageBox]::Show(
-        "Once you've logged in as root in the SSH window and see a shell prompt, click YES to inject the bootstrap commands automatically.",
-        "Ready to Bootstrap?",
-        'YesNo',
-        'Question'
-    )
-    if ($ready -ne 'Yes') {
-        Write-Warn "Interactive bootstrap cancelled by user before sending commands."
-        return
-    }
-
-    # Use WScript.Shell SendKeys to inject the script into the active cmd/ssh window
-    try {
-        $wshell = New-Object -ComObject WScript.Shell
-    } catch {
-        Write-ErrorLog "Failed to create WScript.Shell COM object for SendKeys: $_"
-        [System.Windows.MessageBox]::Show(
-            "Unable to automate SSH window (WScript.Shell failed). Please run the bootstrap commands manually.",
-            "Bootstrap Error",
-            'OK',
-            'Error'
-        ) | Out-Null
-        return
-    }
-
-    Write-Info "Sending bootstrap script for '$NewUser' to SSH window via SendKeys."
-
-    # Build the bootstrap script as a single here-string and substitute NEWUSER once
-    $bootstrapScript = @'
-set -e
-NEWUSER='{0}'
-
-echo "=== Bootstrap: creating user $NEWUSER with sudo access ==="
-
-if id "$NEWUSER" >/dev/null 2>&1; then
-  echo "User $NEWUSER already exists. Skipping creation."
-else
-  if command -v useradd >/dev/null 2>&1; then
-    useradd -m -s /bin/bash "$NEWUSER" || echo "useradd returned non-zero (possibly already exists)."
-  elif command -v adduser >/dev/null 2>&1; then
-    adduser --disabled-password --gecos "" "$NEWUSER" || echo "adduser returned non-zero (possibly already exists)."
-  else
-    echo "Neither useradd nor adduser is available."
-    exit 1
-  fi
-fi
-
-echo
-echo "Now setting password for $NEWUSER ..."
-passwd "$NEWUSER"
-
-if getent group sudo >/dev/null 2>&1; then
-  usermod -aG sudo "$NEWUSER"
-elif getent group wheel >/dev/null 2>&1; then
-  usermod -aG wheel "$NEWUSER"
-fi
-
-SRC_KEYS=""
-if [ -f "/root/.ssh/authorized_keys" ]; then
-  SRC_KEYS="/root/.ssh/authorized_keys"
-fi
-
-if [ -n "$SRC_KEYS" ]; then
-  HOME_DIR=$(eval echo "~$NEWUSER")
-  mkdir -p "$HOME_DIR/.ssh"
-  cp "$SRC_KEYS" "$HOME_DIR/.ssh/authorized_keys"
-  chown -R "$NEWUSER:$NEWUSER" "$HOME_DIR/.ssh"
-  chmod 700 "$HOME_DIR/.ssh"
-  chmod 600 "$HOME_DIR/.ssh/authorized_keys"
-  echo "Copied $SRC_KEYS to $HOME_DIR/.ssh/authorized_keys"
-else
-  echo "No /root/.ssh/authorized_keys found. You can add keys later."
-fi
-
-echo "Bootstrap complete for $NEWUSER."
-'@ -f $NewUser
-
-    # Split into lines and send each line to the SSH window
-    $bootstrapLines = $bootstrapScript -split "`r?`n"
-
-    foreach ($line in $bootstrapLines) {
-        # Escape characters that SendKeys treats specially: + ^ % ~ ( ) { }
-        $safe = $line -replace '([\+\^\%\~\(\)\{\}])', '{$1}'
-        $wshell.SendKeys($safe + "{ENTER}")
-        Start-Sleep -Milliseconds 120
-    }
-
-    Write-Info "Bootstrap script sent. User should now see prompts in the SSH window for '$NewUser' password and status messages."
-}
-
 function Run-NewServerSetup {
     Write-Info "Run-NewServerSetup invoked."
 
@@ -1206,7 +1077,6 @@ function Run-NewServerSetup {
 
     Show-MessageBoxInfo "New Server Setup will create a non-root sudo user, copy SSH keys, test login, and optionally harden sshd." "New Server Setup"
 
-    # Ask for new user name & password via simple dialog
     $win = New-Window -Title "New User on Remote Server" -Width 420 -Height 260
     $root = New-StackPanel -Orientation Vertical -Margin 16
     $root.Children.Add((New-Label -Text "Create a new non-root sudo user on the remote server" -FontSize 14 -Bold $true)) | Out-Null
@@ -1298,15 +1168,93 @@ function Run-NewServerSetup {
     $pass    = $pwd1.Password
     Write-Info "Creating new user '$newUser' on $($conn.Host)."
 
-    # If this is ROOT + password-only, we cannot do non-interactive ssh.
-    # Switch to interactive bootstrap mode instead.
-    if (-not $conn.IdentityFile -and $conn.User -eq "root") {
-        Write-Warn "New Server Setup: detected root login without key. Using interactive bootstrap mode for '$newUser'."
-        Bootstrap-InteractiveRootSetup -HostName $conn.Host -Port $conn.Port -User $conn.User -NewUser $newUser
+    if ($conn.User -eq "root") {
+        Write-Warn "New Server Setup: detected root login. Using interactive ssh.exe pipeline for '$newUser'."
+
+        # Build the bootstrap script that will run on the remote server
+        $bootstrapScript = @'
+set -e
+NEWUSER='{0}'
+NEWPASS='{1}'
+
+echo "=== Bootstrap: creating user $NEWUSER with sudo access ==="
+
+if id "$NEWUSER" >/dev/null 2>&1; then
+  echo "User $NEWUSER already exists. Skipping creation."
+  exit 0
+fi
+
+if command -v useradd >/dev/null 2>&1; then
+  useradd -m -s /bin/bash "$NEWUSER" || echo "useradd returned non-zero (possibly user already exists). Continuing..."
+elif command -v adduser >/dev/null 2>&1; then
+  adduser --disabled-password --gecos "" "$NEWUSER" || echo "adduser returned non-zero (possibly user already exists). Continuing..."
+else
+  echo "Neither useradd nor adduser is available on this system."
+  exit 1
+fi
+
+echo "$NEWUSER:$NEWPASS" | chpasswd
+
+if getent group sudo >/dev/null 2>&1; then
+  usermod -aG sudo "$NEWUSER"
+elif getent group wheel >/dev/null 2>&1; then
+  usermod -aG wheel "$NEWUSER"
+fi
+
+SRC_KEYS=""
+if [ -f "/root/.ssh/authorized_keys" ]; then
+  SRC_KEYS="/root/.ssh/authorized_keys"
+elif [ -n "$SUDO_USER" ] && [ -f "/home/$SUDO_USER/.ssh/authorized_keys" ]; then
+  SRC_KEYS="/home/$SUDO_USER/.ssh/authorized_keys"
+fi
+
+if [ -n "$SRC_KEYS" ]; then
+  HOME_DIR=$(eval echo "~$NEWUSER")
+  mkdir -p "$HOME_DIR/.ssh"
+  cp "$SRC_KEYS" "$HOME_DIR/.ssh/authorized_keys"
+  chown -R "$NEWUSER:$NEWUSER" "$HOME_DIR/.ssh"
+  chmod 700 "$HOME_DIR/.ssh"
+  chmod 600 "$HOME_DIR/.ssh/authorized_keys"
+  echo "Copied $SRC_KEYS to $HOME_DIR/.ssh/authorized_keys"
+else
+  echo "No existing authorized_keys found to copy. You can add keys later."
+fi
+
+echo "Bootstrap complete for $NEWUSER."
+'@ -f $newUser, $pass
+
+        $tmpDir    = [System.IO.Path]::GetTempPath()
+        $tmpScript = Join-Path $tmpDir ("server-toolkit-bootstrap-{0}-{1}.sh" -f $conn.Host, $newUser)
+        Write-Info "Writing root bootstrap script for '$newUser' to $tmpScript"
+        Set-Content -LiteralPath $tmpScript -Value $bootstrapScript -Encoding UTF8
+
+        $sshArgs = @()
+        $sshArgs += "-p $($conn.Port)"
+        $sshArgs += "-o StrictHostKeyChecking=no"
+        $sshArgs += "-o UserKnownHostsFile=`"$($Script:KnownHosts)`""
+        $sshArgs += "$($conn.User)@$($conn.Host) 'bash -s'"
+
+        $sshCommand = "ssh.exe " + ($sshArgs -join " ")
+        $cmdLine    = "type `"$tmpScript`" | $sshCommand"
+
+        Write-Info "Launching interactive bootstrap console with: $cmdLine"
+        [System.Windows.MessageBox]::Show(
+            "A new console window will open and run:" + [Environment]::NewLine +
+            "  type `"$tmpScript`" | ssh ... 'bash -s'" + [Environment]::NewLine + [Environment]::NewLine +
+            "In that window:" + [Environment]::NewLine +
+            "  1) When prompted, type the ROOT SSH password for $($conn.Host)." + [Environment]::NewLine +
+            "  2) After successful login, the script will automatically create '$newUser'," + [Environment]::NewLine +
+            "     set its password, add sudo, and copy authorized_keys (if available).",
+            "Root Bootstrap Instructions",
+            'OK',
+            'Information'
+        ) | Out-Null
+
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/k $cmdLine" | Out-Null
+
         return
     }
 
-    # Non-interactive path (key-based) – keep your existing remote script + Invoke-SshCommand
     $remoteScript = @'
 set -e
 NEWUSER='{0}'
