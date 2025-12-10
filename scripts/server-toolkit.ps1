@@ -508,7 +508,8 @@ function Invoke-SshCommand {
     $args = @(
         "-p", $Port,
         "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=$($Script:KnownHosts)"
+        "-o", "UserKnownHostsFile=$($Script:KnownHosts)",
+        "-o", "BatchMode=yes"
     )
 
     if ($IdentityFile) {
@@ -524,7 +525,7 @@ function Invoke-SshCommand {
     Write-Info "Running ssh command: ssh $($args -join ' ')"
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName               = "ssh"
+    $psi.FileName               = "ssh.exe"
     $psi.Arguments              = ($args -join " ")
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
@@ -636,7 +637,7 @@ function Invoke-ScpDownload {
     Write-Info "Running scp download: scp $($args -join ' ')"
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "scp"
+    $psi.FileName = "scp.exe"
     $psi.Arguments = ($args -join " ")
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
@@ -697,7 +698,7 @@ function Invoke-ScpUpload {
     Write-Info "Running scp upload: scp $($args -join ' ')"
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "scp"
+    $psi.FileName = "scp.exe"
     $psi.Arguments = ($args -join " ")
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
@@ -1246,7 +1247,7 @@ echo "User $NEWUSER created and configured."
             $sshArgs += "-p $($conn.Port)"
             $sshArgs += "$newUser@$($conn.Host)"
 
-            $cmdLine = "ssh " + ($sshArgs -join " ")
+            $cmdLine = "ssh.exe " + ($sshArgs -join " ")
             Write-Info "Launching interactive ssh session for new user in new console: $cmdLine"
             Start-Process -FilePath "cmd.exe" -ArgumentList "/k $cmdLine" | Out-Null
         }
@@ -1521,7 +1522,7 @@ function Run-ServerLogin {
     $sshArgs += "-p $($conn.Port)"
     $sshArgs += "$($conn.User)@$($conn.Host)"
 
-    $cmdLine = "ssh " + ($sshArgs -join " ")
+    $cmdLine = "ssh.exe " + ($sshArgs -join " ")
     Write-Info "Launching interactive ssh session in new console: $cmdLine"
 
     # Open a new cmd window and keep it open after ssh exits
