@@ -12,7 +12,7 @@ Add-Type -AssemblyName System.Xaml
         Foreground="#f0f0f0"
         FontFamily="Segoe UI">
     <Window.Resources>
-        <!-- Base palette similar to NodeCloud -->
+        <!-- Palette similar to your NodeCloud UI -->
         <SolidColorBrush x:Key="WindowBg" Color="#1e1f22" />
         <SolidColorBrush x:Key="PanelBg" Color="#25272b" />
         <SolidColorBrush x:Key="InputBg" Color="#2f3238" />
@@ -26,7 +26,7 @@ Add-Type -AssemblyName System.Xaml
         <SolidColorBrush x:Key="ButtonBgPressed" Color="#0090d0" />
         <SolidColorBrush x:Key="BorderBrushDark" Color="#3b3f46" />
 
-        <!-- Labels / text -->
+        <!-- Text / labels -->
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource LabelFg}" />
         </Style>
@@ -35,7 +35,7 @@ Add-Type -AssemblyName System.Xaml
             <Setter Property="Margin" Value="0,0,4,4" />
         </Style>
 
-        <!-- GroupBox = panels -->
+        <!-- Group panels -->
         <Style TargetType="GroupBox">
             <Setter Property="Background" Value="{StaticResource PanelBg}" />
             <Setter Property="Foreground" Value="{StaticResource TextFg}" />
@@ -45,13 +45,18 @@ Add-Type -AssemblyName System.Xaml
             <Setter Property="Margin" Value="0,0,0,12" />
         </Style>
 
-        <!-- Inputs -->
+        <!-- Text inputs -->
         <Style TargetType="TextBox">
             <Setter Property="Background" Value="{StaticResource InputBg}" />
             <Setter Property="Foreground" Value="{StaticResource TextFg}" />
             <Setter Property="BorderBrush" Value="{StaticResource InputBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="4,2" />
+            <Style.Triggers>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource InputBorderFocused}" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
         <Style TargetType="PasswordBox">
@@ -60,20 +65,12 @@ Add-Type -AssemblyName System.Xaml
             <Setter Property="BorderBrush" Value="{StaticResource InputBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="4,2" />
-        </Style>
-
-        <!-- Highlight focused fields with teal border -->
-        <Style TargetType="Control" x:Key="InputFocusBase">
             <Style.Triggers>
                 <Trigger Property="IsKeyboardFocused" Value="True">
                     <Setter Property="BorderBrush" Value="{StaticResource InputBorderFocused}" />
                 </Trigger>
             </Style.Triggers>
         </Style>
-
-        <!-- Merge focus style into TextBox / PasswordBox -->
-        <Style TargetType="TextBox" BasedOn="{StaticResource InputFocusBase}" />
-        <Style TargetType="PasswordBox" BasedOn="{StaticResource InputFocusBase}" />
 
         <!-- Buttons -->
         <Style TargetType="Button">
