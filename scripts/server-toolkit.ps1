@@ -256,7 +256,7 @@ function Select-ProfileFromDisk([string]$Purpose) {
 function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
     if ($CachedConn.Value) {
         $c = $CachedConn.Value
-        if (Confirm "Reuse $Purpose connection: $($c.User)@$($c.Host):$($c.Port)?" $false) {
+        if (Confirm "Reuse $Purpose connection: $($c.User)@$($c.Host):$($c.Port)?" $true) {
             Prepare-HostKey $c.Host
             return $c
         }
@@ -273,6 +273,8 @@ function Prompt-Connection([string]$Purpose, [ref]$CachedConn) {
                 return $p
             }
         }
+    } else {
+        Write-Warn "No stored connection profiles found in $Script:ProfilesDir matching '*_ssh_config.txt'."
     }
 
     Show-Banner
@@ -418,17 +420,42 @@ function Select-SSHKeyFile {
     Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue | Out-Null
     $ofd = New-Object System.Windows.Forms.OpenFileDialog
     $ofd.Title = "Select SSH private key"
+
     if ($Script:LastIdentityPath -and (Test-Path $Script:LastIdentityPath)) {
         $ofd.InitialDirectory = [System.IO.Path]::GetDirectoryName($Script:LastIdentityPath)
     } else {
         $ofd.InitialDirectory = Join-Path $HOME ".ssh"
     }
-    # You might later restrict extensions if you want
-    $ofd.Filter = "All Files (*.*)|*.*"
-    if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        return $ofd.FileName
+
+    # Bias toward common key filenames, but still allow all files
+    $ofd.Filter = "SSH Keys (*.pem;id_ed25519;id_rsa;id_ecdsa;id_dsa;*_key)|*.pem;id_ed25519;id_rsa;id_ecdsa;id_dsa;*_key|All Files (*.*)|*.*"
+
+    while ($true) {
+        if ($ofd.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
+            return $null
+        }
+
+        $path = $ofd.FileName
+        if (-not (Test-Path $path)) {
+            Write-Warn "Selected file does not exist: $path"
+            continue
+        }
+
+        # Check first line for a plausible private key header
+        $firstLine = $null
+        try {
+            $firstLine = (Get-Content -Path $path -TotalCount 1 -ErrorAction Stop)
+        } catch {
+            Write-Warn "Unable to read file: $path"
+            continue
+        }
+
+        if ($firstLine -match '-----BEGIN (OPENSSH|RSA|EC|DSA|ED25519) PRIVATE KEY-----') {
+            return $path
+        } else {
+            Write-Warn "The selected file does not look like a supported SSH private key. Please choose another file."
+        }
     }
-    return $null
 }
 
 function Select-SaveFilePath {
