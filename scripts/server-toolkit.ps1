@@ -500,7 +500,8 @@ function Invoke-SshCommand {
         [string]$User,
         [string]$Port = "22",
         [string]$IdentityFile,
-        [string]$Command
+        [string]$Command,
+        [string]$InputData
     )
 
     $args = @(
@@ -522,16 +523,22 @@ function Invoke-SshCommand {
     Write-Info "Running ssh command: ssh $($args -join ' ')"
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "ssh"
-    $psi.Arguments = ($args -join " ")
+    $psi.FileName               = "ssh"
+    $psi.Arguments              = ($args -join " ")
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardInput  = $true
+    $psi.UseShellExecute        = $false
+    $psi.CreateNoWindow         = $true
 
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
     [void]$p.Start()
+
+    if ($InputData) {
+        $p.StandardInput.Write($InputData)
+        $p.StandardInput.Close()
+    }
 
     $stdout = $p.StandardOutput.ReadToEnd()
     $stderr = $p.StandardError.ReadToEnd()
@@ -545,10 +552,15 @@ function Invoke-SshCommand {
             Write-ErrorLog ("ssh-keygen -R failed for host {0}: {1}" -f $HostName, $_)
         }
 
-        # retry once
         $p = New-Object System.Diagnostics.Process
         $p.StartInfo = $psi
         [void]$p.Start()
+
+        if ($InputData) {
+            $p.StandardInput.Write($InputData)
+            $p.StandardInput.Close()
+        }
+
         $stdout = $p.StandardOutput.ReadToEnd()
         $stderr = $p.StandardError.ReadToEnd()
         $p.WaitForExit()
@@ -788,12 +800,12 @@ function Show-ConnectionDialog {
     # Buttons
     $btnPanel = New-Object Windows.Controls.StackPanel
     $btnPanel.Orientation = "Horizontal"
-    $btnPanel.HorizontalAlignment = "Right"
-    $btnPanel.Margin = "0,12,0,0"
+    $btnPanel.HorizontalAlignment = "Center"
+    $btnPanel.Margin = "0,16,0,0"
 
     $btnCancel = New-Button -Content "Cancel"
     $btnCancel.Width = 100
-    $btnCancel.Margin = "0,0,8,0"
+    $btnCancel.Margin = "0,0,12,0"
     $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
 
     $btnOK = New-Button -Content "Connect"
@@ -887,7 +899,7 @@ function Select-ProfileFromDisk {
 
     $btnCancel = New-Button -Content "Cancel"
     $btnCancel.Width = 100
-    $btnCancel.Margin = "0,0,8,0"
+    $btnCancel.Margin = "0,0,12,0"
     $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
 
     $btnOK = New-Button -Content "Use Profile"
@@ -1067,12 +1079,12 @@ function Run-NewServerSetup {
 
     $btnPanel = New-Object Windows.Controls.StackPanel
     $btnPanel.Orientation = "Horizontal"
-    $btnPanel.HorizontalAlignment = "Right"
-    $btnPanel.Margin = "0,12,0,0"
+    $btnPanel.HorizontalAlignment = "Center"
+    $btnPanel.Margin = "0,16,0,0"
 
     $btnCancel = New-Button -Content "Cancel"
-    $btnCancel.Width = 90
-    $btnCancel.Margin = "0,0,8,0"
+    $btnCancel.Width = 100
+    $btnCancel.Margin = "0,0,12,0"
     $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
 
     $btnOK = New-Button -Content "Create User"
@@ -1156,7 +1168,14 @@ echo "User $NEWUSER created and configured."
 '@ -f $newUser, $pass
 
     $cmd = "bash -s"
-    $res = Invoke-SshCommand -HostName $conn.Host -User $conn.User -Port $conn.Port -IdentityFile $conn.IdentityFile -Command $cmd
+    $res = Invoke-SshCommand `
+        -HostName   $conn.Host `
+        -User       $conn.User `
+        -Port       $conn.Port `
+        -IdentityFile $conn.IdentityFile `
+        -Command    $cmd `
+        -InputData  $remoteScript
+
     if ($res.ExitCode -ne 0) {
         Show-MessageBoxError "Remote user creation script failed:`n$res.StdErr" "New Server Setup"
         return
@@ -1225,8 +1244,8 @@ function Run-BackupP12 {
     $btnPanel.HorizontalAlignment = "Right"
 
     $btnCancel = New-Button -Content "Cancel"
-    $btnCancel.Width = 90
-    $btnCancel.Margin = "0,0,8,0"
+    $btnCancel.Width = 100
+    $btnCancel.Margin = "0,0,12,0"
     $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
 
     $btnOK = New-Button -Content "Download"
@@ -1285,8 +1304,8 @@ function Run-UploadP12 {
     $btnPanel.Orientation = "Horizontal"
     $btnPanel.HorizontalAlignment = "Right"
     $btnCancel = New-Button -Content "Cancel"
-    $btnCancel.Width = 90
-    $btnCancel.Margin = "0,0,8,0"
+    $btnCancel.Width = 100
+    $btnCancel.Margin = "0,0,12,0"
     $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
     $btnOK = New-Button -Content "Verify"
     $btnOK.Width = 120
