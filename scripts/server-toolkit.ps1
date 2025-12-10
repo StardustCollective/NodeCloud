@@ -536,13 +536,27 @@ function Invoke-SshCommand {
     [void]$p.Start()
 
     if ($InputData) {
+        Write-Info "Invoke-SshCommand: sending InputData to stdin (length=$($InputData.Length))."
         $p.StandardInput.Write($InputData)
         $p.StandardInput.Close()
     }
 
+    # HARD TIMEOUT so the GUI can't hang forever
+    $timeoutMs = 30000
+    $exited = $p.WaitForExit($timeoutMs)
+
+    if (-not $exited) {
+        Write-Warn "Invoke-SshCommand: ssh timed out after $timeoutMs ms for $User@$HostName. Killing process."
+        try { $p.Kill() } catch {}
+        return [PSCustomObject]@{
+            ExitCode = 999
+            StdOut   = ""
+            StdErr   = "ssh command timed out after $timeoutMs ms for $User@$HostName"
+        }
+    }
+
     $stdout = $p.StandardOutput.ReadToEnd()
     $stderr = $p.StandardError.ReadToEnd()
-    $p.WaitForExit()
 
     if ($stderr -match "REMOTE HOST IDENTIFICATION HAS CHANGED") {
         Write-Warn "Host key mismatch detected for $HostName. Cleaning known_hosts entry and retrying."
@@ -557,17 +571,41 @@ function Invoke-SshCommand {
         [void]$p.Start()
 
         if ($InputData) {
+            Write-Info "Invoke-SshCommand: retry sending InputData to stdin (length=$($InputData.Length))."
             $p.StandardInput.Write($InputData)
             $p.StandardInput.Close()
         }
 
+        $exited = $p.WaitForExit($timeoutMs)
+        if (-not $exited) {
+            Write-Warn "Invoke-SshCommand (retry): ssh timed out after $timeoutMs ms for $User@$HostName. Killing process."
+            try { $p.Kill() } catch {}
+            return [PSCustomObject]@{
+                ExitCode = 999
+                StdOut   = ""
+                StdErr   = "ssh command (retry) timed out after $timeoutMs ms for $User@$HostName"
+            }
+        }
+
         $stdout = $p.StandardOutput.ReadToEnd()
         $stderr = $p.StandardError.ReadToEnd()
-        $p.WaitForExit()
     }
 
     if ($stderr) {
         Write-Warn ("ssh stderr for {0}: {1}" -f $HostName, $stderr)
+    }
+
+    Write-Info ("Invoke-SshCommand finished for {0}@{1} with ExitCode={2}" -f $User, $HostName, $p.ExitCode)
+
+    # Trim outputs in the log but keep full text in return object
+    if ($stdout) {
+        $sample = ($stdout -split "`r?`n")[0..([Math]::Min(4, ($stdout -split "`r?`n").Count-1))] -join " | "
+        Write-Info "ssh stdout (first lines): $sample"
+    }
+
+    if ($stderr) {
+        $sampleErr = ($stderr -split "`r?`n")[0..([Math]::Min(4, ($stderr -split "`r?`n").Count-1))] -join " | "
+        Write-Warn "ssh stderr (first lines): $sampleErr"
     }
 
     return [PSCustomObject]@{
@@ -1080,15 +1118,16 @@ function Run-NewServerSetup {
     $btnPanel = New-Object Windows.Controls.StackPanel
     $btnPanel.Orientation = "Horizontal"
     $btnPanel.HorizontalAlignment = "Center"
-    $btnPanel.Margin = "0,16,0,0"
+    $btnPanel.Margin = "0,20,0,0"
 
     $btnCancel = New-Button -Content "Cancel"
-    $btnCancel.Width = 100
-    $btnCancel.Margin = "0,0,12,0"
+    $btnCancel.Width = 120
+    $btnCancel.Margin = "0,0,16,0"
     $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
 
     $btnOK = New-Button -Content "Create User"
     $btnOK.Width = 120
+    $btnOK.Margin = "0,0,0,0"
     $btnOK.Add_Click({
         if (-not $tbUser.Text.Trim()) {
             Show-MessageBoxWarn "Username cannot be empty." "Validation"
