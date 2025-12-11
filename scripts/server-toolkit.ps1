@@ -423,9 +423,9 @@ $StartButton.Add_Click({
     # Clear log for a new run
     $LogBox.Clear()
     # Gather inputs
-    $host = $HostBox.Text.Trim()
-    $port = $PortBox.Text.Trim()
-    $user = $UserBox.Text.Trim()
+    $serverHost = $HostBox.Text.Trim()
+    $port       = $PortBox.Text.Trim()
+    $user       = $UserBox.Text.Trim()
     $pass = $PasswordBox.Password      # login password
     $keyPath = $KeyBox.Text.Trim()
     $newUser = $NewUserBox.Text.Trim()
@@ -433,7 +433,7 @@ $StartButton.Add_Click({
     $disableRoot = $DisableRootCheck.IsChecked -and $DisableRootCheck.IsChecked.Value
 
     # Basic validation
-    if ([string]::IsNullOrWhiteSpace($host) -or [string]::IsNullOrWhiteSpace($user) -or [string]::IsNullOrWhiteSpace($port)) {
+    if ([string]::IsNullOrWhiteSpace($serverHost) -or [string]::IsNullOrWhiteSpace($user) -or [string]::IsNullOrWhiteSpace($port)) {
         $AppendLog.Invoke("[ERROR] Host, Port, and Username are required fields.`r`n")
         return
     }
@@ -618,9 +618,9 @@ $StartButton.Add_Click({
     $usePasswordAuth = (-not $useKeyAuth)
     if ($useKeyAuth) {
         # If key auth is chosen, we won't use the provided login password for SSH (but might use it for sudo if given)
-        $AppendLog.Invoke("Attempting key-based login for $user@$host...`r`n")
+        $AppendLog.Invoke("Attempting key-based login for $user@$serverHost...`r`n")
     } else {
-        $AppendLog.Invoke("Attempting password login for $user@$host...`r`n")
+        $AppendLog.Invoke("Attempting password login for $user@$serverHost...`r`n")
     }
 
     # Helper function: run a command via plink and capture output in real-time
@@ -642,7 +642,7 @@ $StartButton.Add_Click({
                 if ($pass) { $args += " -pw `"$pass`"" }
             }
         }
-        $args += " -l $user `"$remoteCmd`""
+        $args += " -l $user $serverHost `"$remoteCmd`""
         # Prepare process start info
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $global:PlinkPath
@@ -687,7 +687,7 @@ $StartButton.Add_Click({
     $needHostKeyAccept = $false
     # Check if host key exists in registry
     $regPath = "HKCU:\Software\SimonTatham\PuTTY\SshHostKeys"
-    $targetKeyPrefix = "*@${port}:${host}"
+    $targetKeyPrefix = "*@${port}:${serverHost}"
     try {
         $regItem = Get-Item $regPath -ErrorAction Stop
         $existingKeys = $regItem.Property -like $targetKeyPrefix
@@ -699,7 +699,7 @@ $StartButton.Add_Click({
     }
     # Also set needHostKeyAccept if known key might mismatch (we will know only after trying, so we try once)
     # Attempt an initial connection (non-batch) in case host key is cached but possibly changed
-    $AppendLog.Invoke("Connecting to $host on port $port...`r`n")
+    $AppendLog.Invoke("Connecting to $serverHost on port $port...`r`n")
     # Prepare plink for initial connect (without -batch to allow prompt, but we feed 'y')
     $psiInit = New-Object System.Diagnostics.ProcessStartInfo
     $psiInit.FileName = $global:PlinkPath
@@ -715,7 +715,7 @@ $StartButton.Add_Click({
     } elseif ($usePasswordAuth -and $pass) {
         $argsInit += " -pw `"$pass`""
     }
-    $argsInit += " -l $user `"exit`""
+    $argsInit += " -l $user $serverHost `"exit`""
     $psiInit.Arguments = $argsInit
     $procInit = New-Object System.Diagnostics.Process
     $procInit.StartInfo = $psiInit
