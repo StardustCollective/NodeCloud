@@ -269,14 +269,42 @@ $MenuSaveProfile  = $Window.FindName("MenuSaveProfile")
 $MenuExit         = $Window.FindName("MenuExit")
 
 # Helper function to append text to log in a thread-safe way
+# Also mirrors all output to a file so we can inspect logs if the GUI closes.
+$global:ServerToolkitLogPath = Join-Path $env:USERPROFILE "server-toolkit.log"
+
 $AppendLog = [Action[string]]{
     param($text)
-    # Ensure we append on the UI thread
-    $LogBox.Dispatcher.Invoke([Action]{
-        $LogBox.AppendText($text)
-        $LogBox.ScrollToEnd()
-    })
+
+    # 1) Write to file log (best-effort, never crash the GUI)
+    try {
+        if (-not [string]::IsNullOrEmpty($global:ServerToolkitLogPath)) {
+            $dir = Split-Path -Parent $global:ServerToolkitLogPath
+            if (-not [IO.Directory]::Exists($dir)) {
+                [IO.Directory]::CreateDirectory($dir) | Out-Null
+            }
+            Add-Content -Path $global:ServerToolkitLogPath -Value $text -ErrorAction SilentlyContinue
+        }
+    } catch {
+        # If file logging fails, ignore; we don't want to break the UI logging
+    }
+
+    # 2) Append to the WPF log textbox on the UI thread
+    try {
+        if ($LogBox -and $LogBox.Dispatcher) {
+            $LogBox.Dispatcher.Invoke([Action]{
+                $LogBox.AppendText($text)
+                $LogBox.ScrollToEnd()
+            })
+        }
+    } catch {
+        # Ignore UI logging errors so they don't crash the app
+    }
 }
+
+# Shared state flags used across handlers
+$script:useKeyAuth       = $false
+$script:usePasswordAuth  = $false
+$script:sudoPassword     = $null
 
 # Another helper: find plink and puttygen paths or download if needed
 function Ensure-PuttyTools {
@@ -477,8 +505,9 @@ $StartButton.Add_Click({
     # SSH key handling:
     # - If user selects a .ppk, convert it to an OpenSSH private key
     # - If user selects any other file, only accept it if the header looks like a valid private key
-    $ppkPath    = $null
-    $useKeyAuth = $false
+    $ppkPath               = $null
+    $script:useKeyAuth     = $false
+    $script:usePasswordAuth = $false
 
     if (-not [string]::IsNullOrWhiteSpace($keyPath)) {
 
@@ -621,8 +650,9 @@ $StartButton.Add_Click({
                     }
 
                     $AppendLog.Invoke("Converted .ppk to OpenSSH key: $openSshPath`r`n")
-                    $keyPath    = $openSshPath
-                    $useKeyAuth = $true
+                    $keyPath               = $openSshPath
+                    $script:useKeyAuth     = $true
+                    $script:usePasswordAuth = $false
                 } catch {
                     $AppendLog.Invoke("[ERROR] Failed to convert .ppk to OpenSSH via PuTTYgen: $_`r`n")
                     return
@@ -632,7 +662,8 @@ $StartButton.Add_Click({
         elseif ($isOpenSshHeader -or $isPemHeader) {
             # Valid OpenSSH/PEM-style private key
             $AppendLog.Invoke("Valid OpenSSH/PEM private key detected - using as-is: $keyPath`r`n")
-            $useKeyAuth = $true
+            $script:useKeyAuth     = $true
+            $script:usePasswordAuth = $false
         }
         else {
             # Anything else is rejected: pub keys, certs, random files, etc.
@@ -643,8 +674,8 @@ $StartButton.Add_Click({
     }
 
     # Determine if we will use password for initial login
-    $usePasswordAuth = (-not $useKeyAuth)
-    if ($useKeyAuth) {
+    $script:usePasswordAuth = (-not $script:useKeyAuth)
+    if ($script:useKeyAuth) {
         # If key auth is chosen, we won't use the provided login password for SSH (but might use it for sudo if given)
         $AppendLog.Invoke("Attempting key-based login for $user@$serverHost...`r`n")
     } else {
@@ -659,9 +690,9 @@ $StartButton.Add_Click({
         )
         # Build base plink arguments
         $args = "-batch -ssh -P $port"
-        if ($useKeyAuth) {
+        if ($script:useKeyAuth) {
             $args += " -i `"$keyPath`""
-        } elseif ($usePasswordAuth) {
+        } elseif ($script:usePasswordAuth) {
             # Note: Using -pw for initial or test login commands if needed
             if ($remoteCmd -eq "exit") {
                 # For initial host key accept, include password if available
@@ -737,9 +768,9 @@ $StartButton.Add_Click({
     $psiInit.CreateNoWindow = $true
     # Build arguments for initial connect
     $argsInit = "-ssh -P $port -legacy-stdio-prompts"
-    if ($useKeyAuth) {
+    if ($script:useKeyAuth) {
         $argsInit += " -i `"$keyPath`""
-    } elseif ($usePasswordAuth -and $pass) {
+    } elseif ($script:usePasswordAuth -and $pass) {
         $argsInit += " -pw `"$pass`""
     }
     $argsInit += " -l $user $serverHost `"exit`""
@@ -861,8 +892,9 @@ $StartButton.Add_Click({
         # root user, no sudo needed
     } else {
         # If user provided a login password and we suspect it's the same for sudo, use it.
-        if ($pass -and -not $useKeyAuth) {
-            $sudoPassword = $pass
+        if ($pass -and -not $script:useKeyAuth) {
+            $sudoPassword        = $pass
+            $script:sudoPassword = $pass
         }
     }
 
@@ -1113,9 +1145,9 @@ function Disable-RequirettyAndContinue {
     $cmd = "sed -i 's/^Defaults\s\+requiretty/#&/' /etc/sudoers"
     # This needs a tty, so use plink -t for this command
     $plinkArgs = "-ssh -t -P $($PortBox.Text.Trim()) -l $($UserBox.Text.Trim())"
-    if ($useKeyAuth) {
+    if ($script:useKeyAuth) {
         $plinkArgs += " -i `"$($KeyBox.Text)`""
-    } elseif ($usePasswordAuth) {
+    } elseif ($script:usePasswordAuth) {
         $plinkArgs += " -pw `"$($PasswordBox.Password)`""
     }
     $plinkArgs += " `"echo $script:sudoPassword | sudo -S -p '' sed -i 's/^Defaults\s\+requiretty/#&/' /etc/sudoers`""
