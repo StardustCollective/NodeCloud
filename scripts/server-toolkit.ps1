@@ -35,6 +35,10 @@ Add-Type -AssemblyName System.Xaml
             <Setter Property="Margin" Value="0,0,4,4" />
         </Style>
 
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource TextFg}" />
+        </Style>
+
         <!-- Group panels -->
         <Style TargetType="GroupBox">
             <Setter Property="Background" Value="{StaticResource PanelBg}" />
@@ -442,67 +446,171 @@ $StartButton.Add_Click({
         return
     }
 
-    # If a key file is provided but ends with .pem or .key, ensure conversion to .ppk
-    $ppkPath = $null
+    # SSH key handling:
+    # - If user selects a .ppk, convert it to an OpenSSH private key
+    # - If user selects any other file, only accept it if the header looks like a valid private key
+    $ppkPath    = $null
     $useKeyAuth = $false
+
     if (-not [string]::IsNullOrWhiteSpace($keyPath)) {
-        $ext = [IO.Path]::GetExtension($keyPath).ToLower()
-        if ($ext -ne ".ppk") {
-            # Need to convert key
-            $AppendLog.Invoke("Converting SSH key to .ppk format...`r`n")
-            # Check if puttygen is available
-            $puttygenPath = ""
-            try {
-                $puttygenCmd = Get-Command puttygen.exe -ErrorAction Stop
-                $puttygenPath = $puttygenCmd.Source
-            } catch {
-                # Try to find in temp if we downloaded earlier
-                $tempPg = Join-Path ([IO.Path]::GetTempPath()) "puttygen.exe"
-                if (Test-Path $tempPg) {
-                    $puttygenPath = $tempPg
+
+        if (-not (Test-Path $keyPath)) {
+            $AppendLog.Invoke("[ERROR] SSH key file not found: $keyPath`r`n")
+            return
+        }
+
+        $ext       = [IO.Path]::GetExtension($keyPath).ToLower()
+        $firstLine = (Get-Content -Path $keyPath -TotalCount 1 -ErrorAction Stop)
+
+        $isPuttyHeader   = $firstLine -like "PuTTY-User-Key-File-*"
+        $isOpenSshHeader = $firstLine -like "-----BEGIN OPENSSH PRIVATE KEY-----"
+        $isPemHeader     = $firstLine -like "-----BEGIN *PRIVATE KEY-----"
+
+        if ($ext -eq ".ppk" -or $isPuttyHeader) {
+            # User explicitly chose a PuTTY key: ask permission to convert .ppk -> OpenSSH
+            $conversionMessage = "You selected a PuTTY (.ppk) private key.`r`n`r`n" +
+                "This type of key cannot be used directly with standard SSH tools or automation." + "`r`n`r`n" +
+                "Your original .ppk file will NOT be changed." + "`r`n" +
+                "The toolkit will create a NEW OpenSSH-compatible private key in your .ssh folder" + "`r`n" +
+                "and use that for SSH connections." + "`r`n`r`n" +
+                "Do you want to convert this .ppk key now?"
+
+            $conversionResult = [System.Windows.MessageBox]::Show(
+                $conversionMessage,
+                "Convert PuTTY Key?",
+                [System.Windows.MessageBoxButton]::YesNo,
+                [System.Windows.MessageBoxImage]::Information
+            )
+
+            if ($conversionResult -ne [System.Windows.MessageBoxResult]::Yes) {
+                $AppendLog.Invoke("[INFO] User declined .ppk conversion. Cannot continue with key-based auth.`r`n")
+                # If they refuse conversion and no valid non-ppk key exists, we fall back to password-only (if provided)
+                if (-not $pass) {
+                    $AppendLog.Invoke("[ERROR] No SSH password provided and .ppk conversion was declined. Aborting.`r`n")
+                    return
                 }
-            }
-            $ppkPath = [IO.Path]::Combine([IO.Path]::GetTempPath(), ([IO.Path]::GetFileNameWithoutExtension($keyPath) + ".ppk"))
-            if ($puttygenPath) {
+                # do not set $useKeyAuth; password flow will be used
+            } else {
+                $AppendLog.Invoke("User accepted .ppk conversion. Converting PuTTY key to OpenSSH private key...`r`n")
+
+                # Find puttygen.exe (Ensure-PuttyTools may have already downloaded it)
+                $puttygenPath = ""
                 try {
-                    # Use WinSCP's command-line conversion if available (winscp.com)
-                    $winscp = Get-Command winscp.com -ErrorAction SilentlyContinue
-                    if ($winscp) {
-                        & $winscp /keygen "$keyPath" /output="$ppkPath" | Out-Null
-                        if (Test-Path $ppkPath) {
-                            $AppendLog.Invoke("Key converted to PPK: $ppkPath`r`n")
-                            $keyPath = $ppkPath
+                    $puttygenCmd = Get-Command puttygen.exe -ErrorAction Stop
+                    $puttygenPath = $puttygenCmd.Source
+                } catch {
+                    # Try TEMP as a fallback
+                    $tempPg = Join-Path ([IO.Path]::GetTempPath()) "puttygen.exe"
+                    if (Test-Path $tempPg) {
+                        $puttygenPath = $tempPg
+                    }
+                }
+
+                if (-not $puttygenPath) {
+                    $AppendLog.Invoke("[ERROR] PuTTYgen (puttygen.exe) not found. Cannot convert .ppk to OpenSSH. `r`n")
+                    return
+                }
+
+                # Determine user's .ssh directory
+                $sshDir = Join-Path $HOME ".ssh"
+                if (-not (Test-Path $sshDir)) {
+                    New-Item -ItemType Directory -Path $sshDir | Out-Null
+                }
+
+                # Default output path for converted key
+                $openSshFileName = [IO.Path]::GetFileNameWithoutExtension($keyPath) + "-openssh.key"
+                $openSshPath     = Join-Path $sshDir $openSshFileName
+
+                # If a file already exists there, offer Overwrite / Save As / Cancel
+                if (Test-Path $openSshPath) {
+                    $existingHeader = ""
+                    try {
+                        $existingHeader = (Get-Content -Path $openSshPath -TotalCount 1 -ErrorAction Stop)
+                    } catch {
+                        $existingHeader = "<unable to read header>"
+                    }
+
+                    $msg = "An SSH private key file already exists at:`r`n`r`n" +
+                           "  $openSshPath`r`n`r`n" +
+                           "First line of the existing file:`r`n" +
+                           "  $existingHeader`r`n`r`n" +
+                           "If you overwrite this file, any other tools or servers using it may break." +
+                           "`r`n`r`nChoose an option:`r`n" +
+                           "  Yes    = Overwrite this file with a new OpenSSH key derived from:`r`n" +
+                           "           $keyPath`r`n" +
+                           "  No     = Choose a different filename and save as a new key`r`n" +
+                           "  Cancel = Abort conversion"
+
+                    $overwriteResult = [System.Windows.MessageBox]::Show(
+                        $msg,
+                        "Existing SSH key detected",
+                        [System.Windows.MessageBoxButton]::YesNoCancel,
+                        [System.Windows.MessageBoxImage]::Warning
+                    )
+
+                    switch -Exact ($overwriteResult) {
+                        ([System.Windows.MessageBoxResult]::Yes) {
+                            # Overwrite $openSshPath as-is
+                            $AppendLog.Invoke("[INFO] User chose to overwrite existing key at $openSshPath.`r`n")
                         }
-                    } else {
-                        # If winscp not present, use puttygen via GUI (non-automated)
-                        $AppendLog.Invoke("[INFO] Launching PuTTYgen for manual conversion...`r`n")
-                        Start-Process -FilePath $puttygenPath -ArgumentList "`"$keyPath`""
-                        # Ask user to convert manually
-                        $AppendLog.Invoke("Please save the key as .ppk in PuTTYgen, then click Continue.`r`n")
-                        # Open file dialog to select the newly saved .ppk
-                        $dlg = New-Object Microsoft.Win32.OpenFileDialog
-                        $dlg.Title = "Select Converted .ppk Key"
-                        $dlg.Filter = "PuTTY Private Key (*.ppk)|*.ppk"
-                        if ($dlg.ShowDialog()) {
-                            $keyPath = $dlg.FileName
-                            $AppendLog.Invoke("Using converted key: $keyPath`r`n")
-                        } else {
-                            $AppendLog.Invoke("[ERROR] Key conversion cancelled by user.`r`n")
+                        ([System.Windows.MessageBoxResult]::No) {
+                            # Let user choose a different filename inside .ssh
+                            $saveDlg = New-Object Microsoft.Win32.SaveFileDialog
+                            $saveDlg.Title            = "Save converted OpenSSH key as..."
+                            $saveDlg.InitialDirectory = $sshDir
+                            $saveDlg.FileName         = $openSshFileName
+                            $saveDlg.Filter           = "OpenSSH Private Key (*.key;*.*)|*.key;*.*"
+
+                            $saveResult = $saveDlg.ShowDialog()
+                            if (-not $saveResult) {
+                                $AppendLog.Invoke("[INFO] User cancelled Save As dialog. Conversion cancelled.`r`n")
+                                return
+                            }
+
+                            $openSshPath = $saveDlg.FileName
+                            $AppendLog.Invoke("User chose to save converted key as: $openSshPath`r`n")
+                        }
+                        ([System.Windows.MessageBoxResult]::Cancel) {
+                            $AppendLog.Invoke("[INFO] User cancelled conversion of .ppk key. No files were changed.`r`n")
+                            return
+                        }
+                        default {
+                            $AppendLog.Invoke("[INFO] Unexpected dialog result. Conversion cancelled.`r`n")
                             return
                         }
                     }
+                }
+
+                $AppendLog.Invoke("Converted OpenSSH key will be saved to: $openSshPath`r`n")
+
+                try {
+                    # puttygen <input.ppk> -O private-openssh -o <output>
+                    & $puttygenPath $keyPath -O private-openssh -o $openSshPath
+
+                    if (-not (Test-Path $openSshPath)) {
+                        $AppendLog.Invoke("[ERROR] PuTTYgen did not produce an OpenSSH key at: $openSshPath`r`n")
+                        return
+                    }
+
+                    $AppendLog.Invoke("Converted .ppk to OpenSSH key: $openSshPath`r`n")
+                    $keyPath    = $openSshPath
+                    $useKeyAuth = $true
                 } catch {
-                    $AppendLog.Invoke("[ERROR] Key conversion failed: $_`r`n")
+                    $AppendLog.Invoke("[ERROR] Failed to convert .ppk to OpenSSH via PuTTYgen: $_`r`n")
                     return
                 }
-            } else {
-                $AppendLog.Invoke("[ERROR] No PuTTYgen available to convert key. Provide a .ppk key or install PuTTYgen.`r`n")
-                return
             }
         }
-        # After potential conversion, set flag
-        if (-not [string]::IsNullOrWhiteSpace($keyPath)) {
+        elseif ($isOpenSshHeader -or $isPemHeader) {
+            # Valid OpenSSH/PEM-style private key
+            $AppendLog.Invoke("Valid OpenSSH/PEM private key detected — using as-is: $keyPath`r`n")
             $useKeyAuth = $true
+        }
+        else {
+            # Anything else is rejected: pub keys, certs, random files, etc.
+            $AppendLog.Invoke("[ERROR] Unsupported SSH key format in file: $keyPath`r`n")
+            $AppendLog.Invoke("First line was: $firstLine`r`n")
+            return
         }
     }
 
