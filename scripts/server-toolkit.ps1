@@ -603,7 +603,7 @@ $StartButton.Add_Click({
         }
         elseif ($isOpenSshHeader -or $isPemHeader) {
             # Valid OpenSSH/PEM-style private key
-            $AppendLog.Invoke("Valid OpenSSH/PEM private key detected — using as-is: $keyPath`r`n")
+            $AppendLog.Invoke("Valid OpenSSH/PEM private key detected - using as-is: $keyPath`r`n")
             $useKeyAuth = $true
         }
         else {
