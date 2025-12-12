@@ -73,7 +73,7 @@ function Test-IsSshPrivateKey {
 
     $lines = Get-Content -LiteralPath $Path -TotalCount 5
     foreach ($line in $lines) {
-        if ($line -match '^(-----BEGIN|PuTTY-User-Key-File-)') {
+        if ($line -match '^-----BEGIN .*PRIVATE KEY-----') {
             return $true
         }
     }
@@ -85,92 +85,6 @@ function Detect-PuTTYKey {
 
     $firstLine = Get-Content -LiteralPath $Path -TotalCount 1
     return ($firstLine -match '^PuTTY-User-Key-File-')
-}
-
-function Install-PuTTYgen {
-    Write-Host "! PuTTYgen not found." -ForegroundColor $Yellow
-    Write-Host ""
-
-    $choice = Read-Host "Install PuTTYgen now? (via Chocolatey if available, otherwise direct download) [Y/n]"
-    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "Y" }
-
-    if ($choice -match "^[Nn]") {
-        Write-Host "- PuTTYgen is required to convert this key. Aborting PuTTY key usage." -ForegroundColor $Red
-        return $null
-    }
-
-    $choco = Get-Command choco -ErrorAction SilentlyContinue
-    if ($choco) {
-        Write-Host "Installing PuTTY via Chocolatey..." -ForegroundColor $Cyan
-        choco install putty -y | Out-Null
-        $gen = Find-PuTTYgen
-        if ($gen) {
-            Write-Host "+ PuTTYgen installed successfully." -ForegroundColor $Green
-            return $gen
-        }
-    }
-
-    Write-Host "Downloading PuTTYgen.exe..." -ForegroundColor $Cyan
-
-    $url = "https://the.earth.li/~sgtatham/putty/latest/w64/puttygen.exe"
-    $dest = Join-Path $env:TEMP "puttygen.exe"
-
-    try {
-        Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
-        Write-Host "+ PuTTYgen downloaded: $dest" -ForegroundColor $Green
-        return $dest
-    } catch {
-        Write-Host "- Failed to download PuTTYgen." -ForegroundColor $Red
-        return $null
-    }
-}
-
-function Find-WinSCP {
-    $paths = @(
-        "$env:ProgramFiles\WinSCP\WinSCP.com",
-        "$env:ProgramFiles(x86)\WinSCP\WinSCP.com"
-    )
-
-    foreach ($p in $paths) {
-        if (Test-Path $p) { return $p }
-    }
-
-    $cmd = Get-Command WinSCP.com -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-
-    return $null
-}
-
-function Convert-PuTTYKey {
-    param(
-        [string]$PpkPath,
-        [string]$OutputPath
-    )
-
-    $winscp = Find-WinSCP
-    if (-not $winscp) {
-        Write-Host "! WinSCP.com not found. Please install WinSCP from https://winscp.net" -ForegroundColor Yellow
-        return $null
-    }
-
-    Write-Host "Converting .ppk → OpenSSH (WinSCP.com)..." -ForegroundColor Cyan
-
-    $cmd = @(
-        '/command',
-        '"open scp://dummy"',
-        "`"keygen /import=`"$PpkPath`" /export=`"$OutputPath`"`"",
-        'exit'
-    )
-
-    & $winscp $cmd 2>&1 | Out-Null
-
-    if (Test-IsSshPrivateKey $OutputPath) {
-        Write-Host "+ Conversion successful." -ForegroundColor Green
-        return $OutputPath
-    }
-
-    Write-Host "- Conversion failed (WinSCP)." -ForegroundColor Red
-    return $null
 }
 
 function Select-SshKeyFile {
@@ -208,32 +122,42 @@ function Select-SshKeyFile {
         }
 
         if (Detect-PuTTYKey $file) {
-            Write-Host "! PuTTY key detected (.ppk). Converting using WinSCP..." -ForegroundColor Yellow
-
+            Write-Host "" 
+            Write-Host "==============================================================" -ForegroundColor $Yellow
+            Write-Host "  PuTTY Private Key Detected (.ppk)" -ForegroundColor $Yellow
+            Write-Host "==============================================================" -ForegroundColor $Yellow
+            Write-Host ""
+            Write-Host "This tool requires a standard OpenSSH private key file." -ForegroundColor $Cyan
+            Write-Host "Your selected file is a PuTTY Private Key (.ppk)." -ForegroundColor $Cyan
+            Write-Host ""
+            Write-Host "Follow these steps to export a normal SSH key from your .ppk:" -ForegroundColor $Green
+            Write-Host ""
+            Write-Host "  1) " -NoNewline; Write-Host "Open " -ForegroundColor $Green -NoNewline; Write-Host "PuTTYgen" -ForegroundColor $Yellow
+            Write-Host "     - If you don't have it, download PuTTY from: https://www.putty.org" -ForegroundColor $Yellow
+            Write-Host ""
+            Write-Host "  2) " -NoNewline; Write-Host "In PuTTYgen, click " -ForegroundColor $Green -NoNewline
+            Write-Host "Conversions → Import Key" -ForegroundColor $Yellow
+            Write-Host "     - Select your .ppk file:" -ForegroundColor $Green
+            Write-Host "       $file" -ForegroundColor $Cyan
+            Write-Host ""
+            Write-Host "  3) " -NoNewline; Write-Host "If prompted, enter your " -ForegroundColor $Green -NoNewline
+            Write-Host "PPK passphrase" -ForegroundColor $Yellow
+            Write-Host ""
+            Write-Host "  4) " -NoNewline; Write-Host "In PuTTYgen, click " -ForegroundColor $Green -NoNewline
+            Write-Host "Conversions → Export OpenSSH key (force new file format)" -ForegroundColor $Yellow
+            Write-Host "     - Choose a file name and location to save the new key." -ForegroundColor $Green
+            Write-Host "     - Recommended: save it in your .ssh folder, for example:" -ForegroundColor $Green
             $sshDir = Join-Path $HOME ".ssh"
-            if (-not (Test-Path $sshDir)) {
-                New-Item -ItemType Directory -Path $sshDir | Out-Null
-            }
+            Write-Host "       $sshDir\myserver_ed25519" -ForegroundColor $Cyan
+            Write-Host ""
+            Write-Host "  5) Close PuTTYgen when you are done." -ForegroundColor $Green
+            Write-Host ""
+            Write-Host "After you have exported the OpenSSH key," -ForegroundColor $Cyan
+            Write-Host "you can select it in the next step." -ForegroundColor $Cyan
+            Write-Host ""
 
-            $name = Read-Host "Enter a name for the converted SSH key (no extension)"
-            if (-not $name) {
-                Write-Host "- Name cannot be empty." -ForegroundColor Red
-                continue
-            }
+            Read-Host "Press Enter once you have exported the OpenSSH key and are ready to select it..."
 
-            $dest = Join-Path $sshDir $name
-
-            if (Test-Path $dest) {
-                Write-Host "- A key with this name already exists. Choose a different name." -ForegroundColor Red
-                continue
-            }
-
-            $converted = Convert-PuTTYKey -PpkPath $file -OutputPath $dest
-            if ($converted) {
-                return $converted
-            }
-
-            Write-Host "- Conversion failed. Try selecting another key." -ForegroundColor Red
             continue
         }
 
