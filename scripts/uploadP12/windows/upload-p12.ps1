@@ -133,10 +133,10 @@ function Select-SshKeyFile {
             Write-Host "Follow these steps to export a normal SSH key from your .ppk:" -ForegroundColor $Green
             Write-Host ""
             Write-Host "  1) " -NoNewline; Write-Host "Open " -ForegroundColor $Green -NoNewline; Write-Host "PuTTYgen" -ForegroundColor $Yellow
-            Write-Host "     - If you don't have it, download PuTTY from: https://www.putty.org" -ForegroundColor $Yellow
+            Write-Host "     - If you don't have it, download PuTTY from: https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html" -ForegroundColor $Yellow
             Write-Host ""
             Write-Host "  2) " -NoNewline; Write-Host "In PuTTYgen, click " -ForegroundColor $Green -NoNewline
-            Write-Host "Conversions → Import Key" -ForegroundColor $Yellow
+            Write-Host "Conversions -> Import Key" -ForegroundColor $Yellow
             Write-Host "     - Select your .ppk file:" -ForegroundColor $Green
             Write-Host "       $file" -ForegroundColor $Cyan
             Write-Host ""
@@ -144,7 +144,7 @@ function Select-SshKeyFile {
             Write-Host "PPK passphrase" -ForegroundColor $Yellow
             Write-Host ""
             Write-Host "  4) " -NoNewline; Write-Host "In PuTTYgen, click " -ForegroundColor $Green -NoNewline
-            Write-Host "Conversions → Export OpenSSH key (force new file format)" -ForegroundColor $Yellow
+            Write-Host "Conversions -> Export OpenSSH key (force new file format)" -ForegroundColor $Yellow
             Write-Host "     - Choose a file name and location to save the new key." -ForegroundColor $Green
             Write-Host "     - Recommended: save it in your .ssh folder, for example:" -ForegroundColor $Green
             $sshDir = Join-Path $HOME ".ssh"
@@ -270,12 +270,33 @@ function Invoke-ScpWithHostHandling {
         [string]$LocalPath
     )
 
-    $known = Get-KnownHostsPath
+    $known  = Get-KnownHostsPath
     $target = "$Username@$Server`:~/"
 
     $args = @()
 
-    if ($PrivateKeyPath) { $args += "-i"; $args += $PrivateKeyPath }
+    if ($PrivateKeyPath) {
+        $normalizedKey = $PrivateKeyPath.Trim('"').Trim()
+
+        try {
+            $normalizedKey = [System.IO.Path]::GetFullPath($normalizedKey)
+        } catch {
+            Write-Host "! Invalid SSH key path: $PrivateKeyPath" -ForegroundColor $Red
+            Write-Host "  $_" -ForegroundColor $Yellow
+            return 1
+        }
+
+        if (-not (Test-Path $normalizedKey)) {
+            Write-Host "! SSH private key file not found:" -ForegroundColor $Red
+            Write-Host "  $normalizedKey" -ForegroundColor $Yellow
+            return 1
+        }
+
+        Write-Host "Using SSH key: $normalizedKey" -ForegroundColor $Cyan
+
+        $args += "-i"
+        $args += $normalizedKey
+    }
 
     $args += @(
         "-o","StrictHostKeyChecking=no",
@@ -287,7 +308,10 @@ function Invoke-ScpWithHostHandling {
     for ($i=1; $i -le 2; $i++) {
         Write-Host "Uploading .p12 file (attempt $i)..." -ForegroundColor $Cyan
         $out = & scp @args 2>&1
-        if ($LASTEXITCODE -eq 0) { return 0 }
+
+        if ($LASTEXITCODE -eq 0) {
+            return 0
+        }
 
         if ($out -match "IDENTIFICATION HAS CHANGED" -or $out -match "Offending") {
             Clean-HostFromKnownHosts $Server
