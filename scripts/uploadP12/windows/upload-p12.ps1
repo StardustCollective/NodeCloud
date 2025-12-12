@@ -15,38 +15,27 @@ $script:SelectedP12File   = $null
 $script:SelectedSshKeyFile = $null
 
 function Select-P12File {
-    $script:SelectedP12File = $null
+    param()
 
     try {
-        $threadScript = {
-            Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
 
-            $dlg = New-Object System.Windows.Forms.OpenFileDialog
-            $dlg.Filter = "P12 Files (*.p12)|*.p12|All Files (*.*)|*.*"
-            $dlg.Title  = "Select .p12 file"
+        $dlg = New-Object System.Windows.Forms.OpenFileDialog
+        $dlg.Filter = "P12 Files (*.p12)|*.p12|All Files (*.*)|*.*"
+        $dlg.Title  = "Select .p12 file"
 
-            try {
-                $docs = [Environment]::GetFolderPath('MyDocuments')
-                if ($docs -and (Test-Path $docs)) {
-                    $dlg.InitialDirectory = $docs
-                }
-            } catch {}
-
-            if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-                $script:SelectedP12File = $dlg.FileName
+        try {
+            $docs = [Environment]::GetFolderPath('MyDocuments')
+            if ($docs -and (Test-Path $docs)) {
+                $dlg.InitialDirectory = $docs
             }
+        } catch {}
+
+        if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            return (Resolve-Path $dlg.FileName).Path
         }
-
-        $t = New-Object System.Threading.Thread($threadScript)
-        $t.SetApartmentState([System.Threading.ApartmentState]::STA)
-        $t.Start()
-        $t.Join()
     } catch {
-        Write-Host "! GUI file picker failed: $($_.Exception.Message)" -ForegroundColor $Yellow
-    }
-
-    if ($script:SelectedP12File -and (Test-Path $script:SelectedP12File)) {
-        return (Resolve-Path $script:SelectedP12File).Path
+        Write-Host "! GUI file picker error: $($_.Exception.Message)" -ForegroundColor $Yellow
     }
 
     while ($true) {
@@ -188,39 +177,35 @@ function Select-SshKeyFile {
     param([string]$PromptTitle = "Select your SSH private key")
 
     while ($true) {
-        $script:SelectedSshKeyFile = $null
+        $file = $null
 
         try {
-            $threadScript = {
-                Add-Type -AssemblyName System.Windows.Forms
+            Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
 
-                $dlg = New-Object System.Windows.Forms.OpenFileDialog
-                $dlg.Title  = "Select SSH private key"
-                $dlg.Filter = "All Files (*.*)|*.*"
+            $dlg = New-Object System.Windows.Forms.OpenFileDialog
+            $dlg.Title  = $PromptTitle
+            $dlg.Filter = "All Files (*.*)|*.*"
 
-                $sshDir = Join-Path $HOME ".ssh"
-                if (Test-Path $sshDir) {
-                    $dlg.InitialDirectory = $sshDir
-                }
-
-                if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-                    $script:SelectedSshKeyFile = $dlg.FileName
-                }
+            $sshDir = Join-Path $HOME ".ssh"
+            if (Test-Path $sshDir) {
+                $dlg.InitialDirectory = $sshDir
             }
 
-            $t = New-Object System.Threading.Thread($threadScript)
-            $t.SetApartmentState([System.Threading.ApartmentState]::STA)
-            $t.Start()
-            $t.Join()
+            if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+                $file = $dlg.FileName
+            } else {
+                return $null
+            }
         } catch {
-            Write-Host "! SSH key file picker failed: $($_.Exception.Message)" -ForegroundColor $Yellow
+            Write-Host "! SSH key file picker error: $($_.Exception.Message)" -ForegroundColor $Yellow
+            $file = Read-Host "Enter full path to your SSH private key (or press Enter to cancel)"
+            if (-not $file) { return $null }
         }
 
-        if (-not $script:SelectedSshKeyFile) {
-            return $null
+        if (-not (Test-Path $file)) {
+            Write-Host "- File not found. Try again." -ForegroundColor $Red
+            continue
         }
-
-        $file = $script:SelectedSshKeyFile
 
         if (Detect-PuTTYKey $file) {
             Write-Host "! PuTTY key detected (.ppk). Converting using WinSCP..." -ForegroundColor Yellow
@@ -253,7 +238,7 @@ function Select-SshKeyFile {
         }
 
         if (Test-IsSshPrivateKey $file) {
-            return $file
+            return (Resolve-Path $file).Path
         }
 
         Write-Host "! Invalid SSH private key. Try again." -ForegroundColor $Yellow
