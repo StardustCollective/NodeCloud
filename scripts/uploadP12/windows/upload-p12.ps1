@@ -299,6 +299,7 @@ function Invoke-ScpWithHostHandling {
     }
 
     $args += @(
+        "-p",
         "-o","StrictHostKeyChecking=no",
         "-o","UserKnownHostsFile=$known",
         $LocalPath,
