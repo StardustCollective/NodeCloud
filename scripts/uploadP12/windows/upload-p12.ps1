@@ -49,22 +49,6 @@ function Detect-PuTTYKey {
     return ($firstLine -match '^PuTTY-User-Key-File-')
 }
 
-function Find-PuTTYgen {
-    $paths = @(
-        "C:\Program Files\PuTTY\puttygen.exe",
-        "C:\Program Files (x86)\PuTTY\puttygen.exe"
-    )
-
-    foreach ($p in $paths) {
-        if (Test-Path $p) { return $p }
-    }
-
-    $gcm = Get-Command puttygen.exe -ErrorAction SilentlyContinue
-    if ($gcm) { return $gcm.Source }
-
-    return $null
-}
-
 function Install-PuTTYgen {
     Write-Host "! PuTTYgen not found." -ForegroundColor $Yellow
     Write-Host ""
@@ -103,29 +87,51 @@ function Install-PuTTYgen {
     }
 }
 
+function Find-WinSCP {
+    $paths = @(
+        "$env:ProgramFiles\WinSCP\WinSCP.com",
+        "$env:ProgramFiles(x86)\WinSCP\WinSCP.com"
+    )
+
+    foreach ($p in $paths) {
+        if (Test-Path $p) { return $p }
+    }
+
+    $cmd = Get-Command WinSCP.com -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    return $null
+}
+
 function Convert-PuTTYKey {
     param(
         [string]$PpkPath,
         [string]$OutputPath
     )
 
-    $gen = Find-PuTTYgen
-    if (-not $gen) {
-        $gen = Install-PuTTYgen
-        if (-not $gen) { return $null }
+    $winscp = Find-WinSCP
+    if (-not $winscp) {
+        Write-Host "! WinSCP.com not found. Please install WinSCP from https://winscp.net" -ForegroundColor Yellow
+        return $null
     }
 
-    Write-Host "Converting PuTTY (.ppk) key to OpenSSH format..." -ForegroundColor $Cyan
+    Write-Host "Converting .ppk → OpenSSH (WinSCP.com)..." -ForegroundColor Cyan
 
-    $cmd = "`"$gen`" `"$PpkPath`" -O private-openssh -o `"$OutputPath`""
-    cmd.exe /c $cmd | Out-Null
+    $cmd = @(
+        '/command',
+        '"open scp://dummy"',
+        "`"keygen /import=`"$PpkPath`" /export=`"$OutputPath`"`"",
+        'exit'
+    )
+
+    & $winscp $cmd 2>&1 | Out-Null
 
     if (Test-IsSshPrivateKey $OutputPath) {
-        Write-Host "+ Conversion successful." -ForegroundColor $Green
+        Write-Host "+ Conversion successful." -ForegroundColor Green
         return $OutputPath
     }
 
-    Write-Host "- Conversion failed." -ForegroundColor $Red
+    Write-Host "- Conversion failed (WinSCP)." -ForegroundColor Red
     return $null
 }
 
@@ -143,18 +149,23 @@ function Select-SshKeyFile {
         $file = $dlg.FileName
 
         if (Detect-PuTTYKey $file) {
-            Write-Host "! PuTTY key detected (.ppk). Conversion is required." -ForegroundColor $Yellow
+            Write-Host "! PuTTY key detected (.ppk). Converting using WinSCP..." -ForegroundColor Yellow
 
             $name = Read-Host "Enter a name for the converted SSH key (no extension)"
             $dest = Join-Path $sshDir $name
 
             if (Test-Path $dest) {
-                Write-Host "- A key with this name already exists. Choose a different name." -ForegroundColor $Red
+                Write-Host "- A key with this name already exists. Choose a different name." -ForegroundColor Red
                 continue
             }
 
             $converted = Convert-PuTTYKey -PpkPath $file -OutputPath $dest
-            return $converted
+            if ($converted) {
+                return $converted
+            }
+
+            Write-Host "- Conversion failed. Try selecting another key." -ForegroundColor Red
+            continue
         }
 
         if (Test-IsSshPrivateKey $file) {
