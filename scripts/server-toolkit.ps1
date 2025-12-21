@@ -1,36 +1,44 @@
-# # Relaunch elevated if not already running as Administrator
-# if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
-#     [Security.Principal.WindowsBuiltInRole] "Administrator"
-# ))
-# {
-#     $scriptPath = $PSCommandPath
-#     if (-not $scriptPath) {
-#         $scriptPath = $MyInvocation.MyCommand.Path
-#     }
+$scriptversion = "1.0"
 
-#     if (-not $scriptPath) {
-#         Write-Host "Unable to determine script path for elevation. Please run this script from a .ps1 file."
-#         pause
-#         exit
-#     }
+try {
+    $global:ServerToolkitLogPath = Join-Path $env:USERPROFILE "server-toolkit.log"
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
+    $hostName = $Host.Name
+    $psver = $PSVersionTable.PSVersion.ToString()
+    $edition = $PSVersionTable.PSEdition
+    $apartment = [System.Threading.Thread]::CurrentThread.ApartmentState.ToString()
+    Add-Content -Path $global:ServerToolkitLogPath -Value "$ts [BOOT] Host=$hostName PSEdition=$edition PSVersion=$psver Apartment=$apartment" -Encoding UTF8 -ErrorAction SilentlyContinue
+} catch {}
 
-#     $quoted = '"' + $scriptPath + '"'
-#     Start-Process powershell.exe -Verb RunAs `
-#         -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File $quoted" `
-#         -WorkingDirectory (Split-Path $scriptPath -Parent)
+$script:DevMode = ($env:SERVER_TOOLKIT_DEV -eq "1")
 
-#     exit
-# }
+try {
+    $apt = [System.Threading.Thread]::CurrentThread.ApartmentState.ToString()
+    if ($apt -ne "STA") {
+        $exe = Join-Path $env:WINDIR "System32\WindowsPowerShell\v1.0\powershell.exe"
 
-# Load required .NET assemblies for WPF
+        $scriptPath = $PSCommandPath
+        if (-not $scriptPath) { $scriptPath = $MyInvocation.MyCommand.Path }
+
+        if ($scriptPath -and (Test-Path -LiteralPath $scriptPath) -and (Test-Path -LiteralPath $exe)) {
+            Start-Process -FilePath $exe -ArgumentList @(
+                "-NoProfile",
+                "-ExecutionPolicy","Bypass",
+                "-STA",
+                "-File", "`"$scriptPath`""
+            ) | Out-Null
+            exit
+        }
+    }
+} catch {}
+
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 Add-Type -AssemblyName System.Xaml
 
-# Define the XAML for the WPF UI
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Server Toolkit" Height="650" Width="700" WindowStartupLocation="CenterScreen"
+        Title="Server Toolkit ${scriptversion} - Stardust Collective" Height="650" Width="715" WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         Background="#1e1f22"
         Foreground="#f0f0f0"
@@ -47,11 +55,88 @@ Add-Type -AssemblyName System.Xaml
         <SolidColorBrush x:Key="ButtonBg" Color="#00a8ff" />
         <SolidColorBrush x:Key="ButtonBgHover" Color="#14b5ff" />
         <SolidColorBrush x:Key="ButtonBgPressed" Color="#0090d0" />
+
+        <!-- Start button (green) palette -->
+        <SolidColorBrush x:Key="StartButtonBg" Color="#47d16c" />
+        <SolidColorBrush x:Key="StartButtonBgHover" Color="#58e07c" />
+        <SolidColorBrush x:Key="StartButtonBgPressed" Color="#33b958" />
+
+        <!-- Start button style -->
+        <Style x:Key="StartButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource StartButtonBg}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="3">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Margin="4,1"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{StaticResource StartButtonBgHover}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="{StaticResource StartButtonBgPressed}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Secondary (grey) button palette -->
+        <SolidColorBrush x:Key="ButtonBgSecondary" Color="#3b3f46" />
+        <SolidColorBrush x:Key="ButtonBgSecondaryHover" Color="#4a4f5a" />
+        <SolidColorBrush x:Key="ButtonBgSecondaryPressed" Color="#2f3238" />
+
         <SolidColorBrush x:Key="BorderBrushDark" Color="#3b3f46" />
+
+        <!-- Secondary button style (grey) -->
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource ButtonBgSecondary}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="3">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Margin="4,1"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{StaticResource ButtonBgSecondaryHover}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="{StaticResource ButtonBgSecondaryPressed}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource LabelFg}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
+
         <Style TargetType="Label">
             <Setter Property="Foreground" Value="{StaticResource LabelFg}" />
             <Setter Property="Margin" Value="0,0,4,4" />
@@ -59,6 +144,8 @@ Add-Type -AssemblyName System.Xaml
 
         <Style TargetType="CheckBox">
             <Setter Property="Foreground" Value="{StaticResource TextFg}" />
+            <Setter Property="IsTabStop" Value="True" />
+            <Setter Property="Focusable" Value="True" />
         </Style>
 
         <Style TargetType="GroupBox">
@@ -132,21 +219,122 @@ Add-Type -AssemblyName System.Xaml
             <Setter Property="Background" Value="#262a30" />
             <Setter Property="Foreground" Value="{StaticResource TextFg}" />
         </Style>
+
+        <!-- Submenu item style (dropdown items) - supports hover background without breaking menu -->
+        <Style x:Key="SubMenuItemStyle" TargetType="MenuItem">
+            <Setter Property="Background" Value="#262a30" />
+            <Setter Property="Foreground" Value="#f0f0f0" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type MenuItem}">
+                        <Grid SnapsToDevicePixels="True">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="22" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Item surface -->
+                            <Border x:Name="Bd"
+                                    Grid.ColumnSpan="2"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="3"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter x:Name="HeaderHost"
+                                                ContentSource="Header"
+                                                RecognizesAccessKey="True"
+                                                VerticalAlignment="Center"/>
+                            </Border>
+
+                            <!-- Submenu arrow (only shown when HasItems) -->
+                            <TextBlock x:Name="Arrow"
+                                    Grid.Column="1"
+                                    Text="›"
+                                    FontSize="16"
+                                    Margin="0,0,8,0"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Right"
+                                    Foreground="#b0b0b0"
+                                    Visibility="Collapsed"/>
+
+                            <!-- Popup for submenu -->
+                            <Popup x:Name="PART_Popup"
+                                Placement="Right"
+                                IsOpen="{TemplateBinding IsSubmenuOpen}"
+                                AllowsTransparency="True"
+                                Focusable="False"
+                                PopupAnimation="Fade">
+                                <Border Background="#262a30"
+                                        BorderBrush="#3b3f46"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Padding="4">
+                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" />
+                                </Border>
+                            </Popup>
+                        </Grid>
+
+                        <ControlTemplate.Triggers>
+
+                            <!-- Show arrow only when this item has children -->
+                            <Trigger Property="HasItems" Value="True">
+                                <Setter TargetName="Arrow" Property="Visibility" Value="Visible" />
+                            </Trigger>
+
+                            <!-- Hover highlight -->
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#3a3f4b" />
+                                <Setter Property="Foreground" Value="#ffffff" />
+                                <Setter TargetName="Arrow" Property="Foreground" Value="#ffffff" />
+                            </Trigger>
+
+                            <!-- Keyboard focus / selection -->
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#3a3f4b" />
+                                <Setter Property="Foreground" Value="#ffffff" />
+                                <Setter TargetName="Arrow" Property="Foreground" Value="#ffffff" />
+                            </Trigger>
+
+                            <!-- Disabled -->
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.45" />
+                                <Setter Property="Foreground" Value="#9aa0a6" />
+                                <Setter TargetName="Arrow" Property="Foreground" Value="#9aa0a6" />
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- Themed ToolTips (match dark UI) -->
+       <Style TargetType="{x:Type ToolTip}">
+            <Setter Property="Background" Value="#25272b" />
+            <Setter Property="Foreground" Value="#f0f0f0" />
+            <Setter Property="BorderBrush" Value="#3b3f46" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MaxWidth" Value="340" />
+
+            <!-- Tooltip positioning -->
+            <Setter Property="Placement" Value="Mouse" />
+            <Setter Property="HorizontalOffset" Value="10" />
+            <Setter Property="VerticalOffset" Value="10" />
+        </Style>
+
         <Style TargetType="MenuItem">
             <Setter Property="Background" Value="#262a30" />
             <Setter Property="Foreground" Value="{StaticResource TextFg}" />
-            <Setter Property="Padding" Value="8,2" />
-            <Style.Triggers>
-                <Trigger Property="IsHighlighted" Value="True">
-                    <Setter Property="Background" Value="#333842" />
-                </Trigger>
-            </Style.Triggers>
+            <Setter Property="Padding" Value="10,4" />
         </Style>
+
     </Window.Resources>
 
     <DockPanel LastChildFill="True">
         <Menu DockPanel.Dock="Top">
-            <MenuItem Header="_File">
+            <MenuItem Header="_File" ItemContainerStyle="{StaticResource SubMenuItemStyle}">
                 <MenuItem Header="_Load Profile..." x:Name="MenuLoadProfile"/>
                 <MenuItem Header="_Save Profile..." x:Name="MenuSaveProfile"/>
                 <Separator/>
@@ -155,210 +343,1688 @@ Add-Type -AssemblyName System.Xaml
         </Menu>
         <Grid Margin="10">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>  <!-- Connection -->
+                <RowDefinition Height="Auto"/>  <!-- Create non-root toggle + NewUserPanel -->
+                <RowDefinition Height="Auto"/>  <!-- Upload P12 toggle -->
+                <RowDefinition Height="Auto"/>  <!-- P12Panel -->
+                <RowDefinition Height="Auto"/>  <!-- Start -->
+                <RowDefinition Height="*"/>     <!-- Log -->
             </Grid.RowDefinitions>
 
             <GroupBox Header="Connection" Grid.Row="0" Margin="0,0,0,10">
                 <Grid Margin="10,5,10,5">
+
+                    <!-- 4 columns: LeftLabel, LeftInput, RightLabel, RightInput
+                        Browse button sits in RightInput column but aligned right -->
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="150"/>   <!-- Host width -->
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>  <!-- Right input column (UserBox + Passphrase) -->
+                        <ColumnDefinition Width="*"/>     <!-- Filler space (so layouts can still breathe) -->
                     </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <Label Content="Host:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center"/>
-                    <TextBox x:Name="HostBox" Grid.Row="0" Grid.Column="1" Margin="5,2" />
-                    <Label Content="Port:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"/>
-                    <TextBox x:Name="PortBox" Grid.Row="1" Grid.Column="1" Margin="5,2" Width="60" Text="22"/>
-                    <Label Content="Username:" Grid.Row="2" Grid.Column="0" VerticalAlignment="Center"/>
-                    <TextBox x:Name="UserBox" Grid.Row="2" Grid.Column="1" Margin="5,2" />
-                    <Label Content="Password:" Grid.Row="3" Grid.Column="0" VerticalAlignment="Center"/>
-                    <PasswordBox x:Name="PasswordBox" Grid.Row="3" Grid.Column="1" Margin="5,2" />
-                    <Label Content="SSH Key File:" Grid.Row="4" Grid.Column="0" VerticalAlignment="Center"/>
-                    <TextBox x:Name="KeyBox" Grid.Row="4" Grid.Column="1" Margin="5,2" IsReadOnly="True"/>
-                    <Button x:Name="BrowseKeyButton" Content="Browse..." Grid.Row="4" Grid.Column="2" Margin="5,2,0,2" Padding="8,0" />
-                </Grid>
-            </GroupBox>
 
-            <GroupBox Header="New User" Grid.Row="1" Margin="0,0,0,10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>  <!-- Host/Port -->
+                        <RowDefinition Height="Auto"/>  <!-- User/Pass -->
+                        <RowDefinition Height="Auto"/>  <!-- Key/Browse -->
+                    </Grid.RowDefinitions>
+
+                    <Label Content="Server IP / Host:" Grid.Row="0" Grid.Column="0" HorizontalAlignment="Right"/>
+                    <TextBox x:Name="HostBox" Grid.Row="0" Grid.Column="1" Margin="5,2" Width="140" HorizontalAlignment="Left"/>
+
+                    <Label Content="SSH Port:" Grid.Row="1" Grid.Column="0" HorizontalAlignment="Right" Margin="10,0,4,0"/>
+                    <TextBox x:Name="PortBox" Grid.Row="1" Grid.Column="1" Margin="5,2" Width="60" HorizontalAlignment="Left" Text="22"/>
+
+                    <Label Content="Server Username:" Grid.Row="0" Grid.Column="2" HorizontalAlignment="Left" Margin="4,0,4,0"/>
+
+                    <!-- Inner grid so UserBox + OpenServer button share the same row -->
+                    <Grid Grid.Row="0" Grid.Column="3" Margin="0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox x:Name="UserBox" Grid.Column="0" Width="173" HorizontalAlignment="Left"/>
+
+                        <!-- Hidden until Connection inputs are valid -->
+                        <Button x:Name="OpenServerButton"
+                            Grid.Column="1"
+                            Content="Open >_"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Margin="10,0,0,0"
+                            Padding="10,2"
+                            Visibility="Visible"
+                            Width="65"
+                            IsEnabled="False"
+                            Opacity="0.4"/>
+                    </Grid>
+
+                    <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,4,0">
+                        <Label Content="SSH Passphrase:" HorizontalAlignment="Left" Margin="0,0,3,0"/>
+                        <TextBlock Text="&#xE72E;" FontFamily="Segoe MDL2 Assets" VerticalAlignment="Center" FontSize="14" Foreground="{StaticResource AccentBrush}">
+                            <TextBlock.ToolTip>
+                                <ToolTip>
+                                    <TextBlock TextWrapping="Wrap" Width="260">This field is for your SSH key passphrase.</TextBlock>
+                                </ToolTip>
+                            </TextBlock.ToolTip>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <PasswordBox x:Name="PasswordBox" Grid.Row="1" Grid.Column="3" Margin="0,2" Width="173" HorizontalAlignment="Left"/>
+
+                    <Label Content="SSH Key File:" Grid.Row="2" Grid.Column="0" HorizontalAlignment="Right"/>
+
+                    <!-- Fixed-width container so Browse can "come in" like the screenshot -->
+                    <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Margin="0" HorizontalAlignment="Stretch">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox x:Name="KeyBox"
+                                Grid.Column="0"
+                                Margin="5,2,8,2"
+                                IsReadOnly="True"/>
+
+                        <Button x:Name="BrowseKeyButton"
+                            Grid.Column="1"
+                            Content="Browse..."
+                            Margin="0,2,77,2"
+                            Padding="18,10"/>
+                    </Grid>
+
+                </Grid>
+                </GroupBox>
+
+            <!-- Create non-root toggle + New User panel (disabled until checked - Phase 2 wiring) -->
+            <StackPanel Grid.Row="1" Margin="0,0,0,10">
+                <CheckBox x:Name="CreateNonRootCheck" Content="Create non-root user" IsChecked="False" Margin="5,0,0,10"/>
+
+                <StackPanel x:Name="NewUserPanel" IsEnabled="False">
+                    <GroupBox Header="New User" Margin="0,0,0,0">
+                        <StackPanel>
+
+                            <Grid Margin="10,5,10,5">
+                                <!-- 4 columns like Connection: LeftLabel, LeftInput, RightLabel, RightInput -->
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <Label Content="New Username:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center"/>
+                                <TextBox x:Name="NewUserBox" Grid.Row="0" Grid.Column="1" Margin="5,2"/>
+
+                                <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,4,0">
+                                    <Label Content="Password:" VerticalAlignment="Center" Margin="0,0,3,0"/>
+                                    <TextBlock Text="&#xE72E;"
+                                            FontFamily="Segoe MDL2 Assets"
+                                            VerticalAlignment="Center"
+                                            FontSize="14"
+                                            Foreground="{StaticResource AccentBrush}">
+                                        <TextBlock.ToolTip>
+                                            <ToolTip>
+                                                <TextBlock TextWrapping="Wrap" Width="260">
+                                                    This password is used for the new non-root user account on the server.
+                                                </TextBlock>
+                                            </ToolTip>
+                                        </TextBlock.ToolTip>
+                                    </TextBlock>
+                                </StackPanel>
+                                <PasswordBox x:Name="NewPasswordBox" Grid.Row="0" Grid.Column="3" Margin="0,2"/>
+                            </Grid>
+
+                            <StackPanel Orientation="Horizontal" Margin="5,6,0,0">
+                                <CheckBox x:Name="DisableRootCheck"
+                                        Content="Disable root login after setup"
+                                        IsChecked="True"/>
+                            </StackPanel>
+
+                        </StackPanel>
+                    </GroupBox>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Upload P12 toggle -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="5,0,0,10">
+                <CheckBox x:Name="UploadP12Check" Content="Upload P12 file" IsChecked="False"/>
+            </StackPanel>
+
+            <!-- Upload P12 area (disabled by default until UploadP12Check is checked - Phase 2 wiring) -->
+            <GroupBox x:Name="P12Panel" Header="P12 Upload" Grid.Row="3" IsEnabled="False" Margin="0,0,0,10">
                 <Grid Margin="10,5,10,5">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
+
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <Label Content="New Username:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center"/>
-                    <TextBox x:Name="NewUserBox" Grid.Row="0" Grid.Column="1" Margin="5,2" />
-                    <Label Content="New User Password:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"/>
-                    <PasswordBox x:Name="NewPasswordBox" Grid.Row="1" Grid.Column="1" Margin="5,2" />
+
+                    <!-- Row 0: file picker -->
+                    <Label Content="P12 Wallet File:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" />
+                    <TextBox x:Name="P12PathBox" Grid.Row="0" Grid.Column="1" Margin="8,2" IsReadOnly="True"/>
+                    <Button x:Name="BrowseP12Button" Grid.Row="0" Grid.Column="2" Content="Browse..." Margin="5,2,0,2" Padding="8,0"/>
+
+                    <!-- Row 1: passphrase -->
+                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Label Content="P12 Passphrase:" VerticalAlignment="Center" Margin="0,0,3,0"/>
+                        <TextBlock Text="&#xE72E;"
+                                FontFamily="Segoe MDL2 Assets"
+                                VerticalAlignment="Center"
+                                FontSize="14"
+                                Foreground="{StaticResource AccentBrush}">
+                            <TextBlock.ToolTip>
+                                <ToolTip>
+                                    <TextBlock TextWrapping="Wrap" Width="260">
+                                        This passphrase unlocks your P12 wallet locally so it can be validated and uploaded.
+                                    </TextBlock>
+                                </ToolTip>
+                            </TextBlock.ToolTip>
+                        </TextBlock>
+                    </StackPanel>
+                    <PasswordBox x:Name="P12PasswordBox" Grid.Row="1" Grid.Column="1" Margin="8,2" />
+                    <!-- keep column 2 empty so it aligns with Browse row -->
                 </Grid>
             </GroupBox>
 
-            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="5,0,0,10">
-                <CheckBox x:Name="DisableRootCheck" Content="Disable root login after setup" IsChecked="True"/>
+            <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,10">
+                <Button x:Name="StartButton"
+                    Content="Start Setup"
+                    Width="100"
+                    HorizontalAlignment="Center"
+                    Style="{StaticResource StartButtonStyle}"/>
+                <Button x:Name="ResetHostKeysButton" Content="Reset Host Keys" Width="130" Margin="10,0,0,0" Visibility="Collapsed"/>
             </StackPanel>
 
-            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,10">
-                <Button x:Name="StartButton" Content="Start Setup" Width="100" HorizontalAlignment="Center"/>
-            </StackPanel>
+            <RichTextBox x:Name="LogBox" Grid.Row="5" Margin="0"
+                        Background="#FF000000"
+                        FontFamily="Consolas" FontSize="12"
+                        IsReadOnly="True"
+                        VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Auto"
+                        BorderThickness="0">
+                <FlowDocument PagePadding="0">
+                    <Paragraph Margin="0"/>
+                </FlowDocument>
+            </RichTextBox>
 
-            <TextBox x:Name="LogBox" Grid.Row="4" Margin="0" Background="#FF000000" Foreground="#FF00FF00"
-                     FontFamily="Consolas" FontSize="12" IsReadOnly="True" TextWrapping="Wrap"
-                     VerticalScrollBarVisibility="Auto" AcceptsReturn="True"/>
-
-            <Grid x:Name="SudoOverlay" Visibility="Collapsed" Background="#80000000" VerticalAlignment="Stretch" HorizontalAlignment="Stretch"
-                  Grid.RowSpan="5">
-                <Border Background="White" Padding="20" CornerRadius="5" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <StackPanel>
-                        <TextBlock Text="Elevation required: enter sudo password" Margin="0,0,0,10" />
-                        <PasswordBox x:Name="SudoPassBox" Width="200" Margin="0,0,0,10"/>
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                            <Button x:Name="SudoOkButton" Content="OK" Width="60" Margin="5"/>
-                            <Button x:Name="SudoCancelButton" Content="Cancel" Width="60" Margin="5"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-            </Grid>
-
-            <Grid x:Name="RequireOverlay" Visibility="Collapsed" Background="#80000000" VerticalAlignment="Stretch" HorizontalAlignment="Stretch"
-                  Grid.RowSpan="5">
-                <Border Background="White" Padding="20" CornerRadius="5" HorizontalAlignment="Center" VerticalAlignment="Center" Width="300">
-                    <StackPanel>
-                        <TextBlock Text="The server requires a TTY for sudo." TextWrapping="Wrap" Margin="0,0,0,10"/>
-                        <TextBlock Text="Disable 'requiretty' in sudoers to continue?" TextWrapping="Wrap" Margin="0,0,0,10"/>
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,0">
-                            <Button x:Name="RequireYesButton" Content="Yes" Width="60" Margin="5"/>
-                            <Button x:Name="RequireNoButton" Content="No" Width="60" Margin="5"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-            </Grid>
         </Grid>
     </DockPanel>
 </Window>
 "@
 
 $reader = New-Object System.Xml.XmlNodeReader $xaml
-$Window = [Windows.Markup.XamlReader]::Load($reader)
 
-$HostBox        = $Window.FindName("HostBox")
-$PortBox        = $Window.FindName("PortBox")
-$UserBox        = $Window.FindName("UserBox")
-$PasswordBox    = $Window.FindName("PasswordBox")
-$KeyBox         = $Window.FindName("KeyBox")
-$BrowseKeyButton= $Window.FindName("BrowseKeyButton")
-$NewUserBox     = $Window.FindName("NewUserBox")
-$NewPasswordBox = $Window.FindName("NewPasswordBox")
-$DisableRootCheck = $Window.FindName("DisableRootCheck")
-$StartButton    = $Window.FindName("StartButton")
-$LogBox         = $Window.FindName("LogBox")
-$SudoOverlay    = $Window.FindName("SudoOverlay")
-$SudoPassBox    = $Window.FindName("SudoPassBox")
-$SudoOkButton   = $Window.FindName("SudoOkButton")
-$SudoCancelButton = $Window.FindName("SudoCancelButton")
-$RequireOverlay = $Window.FindName("RequireOverlay")
-$RequireYesButton = $Window.FindName("RequireYesButton")
-$RequireNoButton  = $Window.FindName("RequireNoButton")
-$MenuLoadProfile  = $Window.FindName("MenuLoadProfile")
-$MenuSaveProfile  = $Window.FindName("MenuSaveProfile")
-$MenuExit         = $Window.FindName("MenuExit")
+try {
+    $MainWindow = [Windows.Markup.XamlReader]::Load($reader)
+}
+catch {
+    $msg = $_.Exception.ToString()
+
+    try {
+        $tmp = Join-Path $env:TEMP "server-toolkit-xaml-error.log"
+        Add-Content -Path $tmp -Value ("===== XAML LOAD FAILED " + (Get-Date) + " =====`r`n" + $msg + "`r`n") -Encoding UTF8
+    } catch {}
+
+    try {
+        Add-Type -AssemblyName PresentationFramework -ErrorAction SilentlyContinue
+        [System.Windows.MessageBox]::Show(
+            "XAML failed to load. The detailed error was saved to:`r`n`r`n$($env:TEMP)\server-toolkit-xaml-error.log`r`n`r`n" +
+            "Top of error:`r`n" +
+            ($msg.Split("`n") | Select-Object -First 12) -join "`r`n",
+            "Server Toolkit - XAML Error",
+            [System.Windows.MessageBoxButton]::OK,
+            [System.Windows.MessageBoxImage]::Error
+        ) | Out-Null
+    } catch {}
+
+    throw
+}
+
+try {
+    [AppDomain]::CurrentDomain.UnhandledException += {
+        param($sender, $e)
+        try {
+            $ex = $e.ExceptionObject
+            $msg = if ($ex) { $ex.ToString() } else { "<null exception>" }
+            Add-Content -Path $global:ServerToolkitLogPath -Value ("[FATAL] AppDomain.UnhandledException:`r`n$msg`r`n") -Encoding UTF8 -ErrorAction SilentlyContinue
+        } catch {}
+    }
+} catch {}
+
+try {
+    [System.Threading.Tasks.TaskScheduler]::UnobservedTaskException += {
+        param($sender, $e)
+        try {
+            Add-Content -Path $global:ServerToolkitLogPath -Value ("[FATAL] TaskScheduler.UnobservedTaskException:`r`n" + $e.Exception.ToString() + "`r`n") -Encoding UTF8 -ErrorAction SilentlyContinue
+        } catch {}
+        try { $e.SetObserved() } catch {}
+    }
+} catch {}
+
+try {
+    Add-Content -Path $global:ServerToolkitLogPath -Value ("DEBUG: MainWindow type = " + $MainWindow.GetType().FullName + "`r`n") -Encoding UTF8 -ErrorAction SilentlyContinue
+} catch {}
+
+if (-not ($MainWindow -is [System.Windows.Window])) {
+    throw "XAML did not load a Window. Type is: $($MainWindow.GetType().FullName)"
+}
+
+$HostBox        = $MainWindow.FindName("HostBox")
+$PortBox        = $MainWindow.FindName("PortBox")
+$UserBox        = $MainWindow.FindName("UserBox")
+$OpenServerButton = $MainWindow.FindName("OpenServerButton")
+$PasswordBox    = $MainWindow.FindName("PasswordBox")
+$KeyBox         = $MainWindow.FindName("KeyBox")
+$BrowseKeyButton= $MainWindow.FindName("BrowseKeyButton")
+$NewUserBox     = $MainWindow.FindName("NewUserBox")
+$NewPasswordBox = $MainWindow.FindName("NewPasswordBox")
+$DisableRootCheck    = $MainWindow.FindName("DisableRootCheck")
+
+$CreateNonRootCheck  = $MainWindow.FindName("CreateNonRootCheck")
+$NewUserPanel        = $MainWindow.FindName("NewUserPanel")
+
+$UploadP12Check      = $MainWindow.FindName("UploadP12Check")
+$P12Panel            = $MainWindow.FindName("P12Panel")
+$P12PathBox          = $MainWindow.FindName("P12PathBox")
+$P12PasswordBox      = $MainWindow.FindName("P12PasswordBox")
+$BrowseP12Button     = $MainWindow.FindName("BrowseP12Button")
+
+$StartButton    = $MainWindow.FindName("StartButton")
+$ResetHostKeysButton = $MainWindow.FindName("ResetHostKeysButton")
+$LogBox         = $MainWindow.FindName("LogBox")
+$script:UiDispatcher = $MainWindow.Dispatcher
+$UiDispatcher = $script:UiDispatcher
+$MenuLoadProfile  = $MainWindow.FindName("MenuLoadProfile")
+$MenuSaveProfile  = $MainWindow.FindName("MenuSaveProfile")
+$MenuExit         = $MainWindow.FindName("MenuExit")
 
 $global:ServerToolkitLogPath = Join-Path $env:USERPROFILE "server-toolkit.log"
 
-$AppendLog = [Action[string]]{
-    param($text)
+function Write-SharedLog {
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [Parameter(Mandatory=$true)][string]$Value
+    )
     try {
-        if (-not [string]::IsNullOrEmpty($global:ServerToolkitLogPath)) {
-            $dir = Split-Path -Parent $global:ServerToolkitLogPath
-            if (-not [IO.Directory]::Exists($dir)) {
-                [IO.Directory]::CreateDirectory($dir) | Out-Null
-            }
-            Add-Content -Path $global:ServerToolkitLogPath -Value $text -ErrorAction SilentlyContinue
+        $dir = Split-Path -Parent $Path
+        if (-not [IO.Directory]::Exists($dir)) { [IO.Directory]::CreateDirectory($dir) | Out-Null }
+
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Value)
+        $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
+        try {
+            $fs.Write($bytes, 0, $bytes.Length)
+            $fs.Flush()
+        } finally {
+            $fs.Dispose()
         }
     } catch {}
+}
 
-    $isDebug = $false
-    if ($text -like "DEBUG:*") {
-        $isDebug = $true
+try {
+    if (Test-Path $global:ServerToolkitLogPath) {
+        Remove-Item -LiteralPath $global:ServerToolkitLogPath -Force -ErrorAction SilentlyContinue
     }
+} catch {}
 
-    if (-not $isDebug) {
+try {
+    Write-SharedLog -Path $global:ServerToolkitLogPath -Value ("===== Server Toolkit Log Started: " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + " =====`r`n")
+} catch {}
+
+$script:ApplyUiEnabledAction = [Action[bool]]{
+    param([bool]$En)
+    try {
+        if ($HostBox)         { $HostBox.IsEnabled = $En }
+        if ($PortBox)         { $PortBox.IsEnabled = $En }
+        if ($UserBox)         { $UserBox.IsEnabled = $En }
+        if ($PasswordBox)     { $PasswordBox.IsEnabled = $En }
+        if ($BrowseKeyButton) { $BrowseKeyButton.IsEnabled = $En }
+
+        if ($NewUserBox)      { $NewUserBox.IsEnabled = $En }
+        if ($NewPasswordBox)  { $NewPasswordBox.IsEnabled = $En }
+
+        if ($DisableRootCheck){ $DisableRootCheck.IsEnabled = $En }
+
+        if ($CreateNonRootCheck) { $CreateNonRootCheck.IsEnabled = $En }
+        if ($UploadP12Check)     { $UploadP12Check.IsEnabled     = $En }
+        if ($BrowseP12Button)    { $BrowseP12Button.IsEnabled    = $En }
+        if ($ResetHostKeysButton){ $ResetHostKeysButton.IsEnabled = $En }
+
+        if ($LogBox)          { $LogBox.IsEnabled = $true }
+    } catch {
         try {
-            if ($LogBox -and $LogBox.Dispatcher) {
-                $LogBox.Dispatcher.Invoke([Action]{
-                    $LogBox.AppendText($text)
-                    $LogBox.ScrollToEnd()
-                })
-            }
+            Add-Content -Path $global:ServerToolkitLogPath `
+                -Value ("[UIERR] ApplyUiEnabledAction failed: " + $_.Exception.ToString() + "`r`n") `
+                -Encoding UTF8 -ErrorAction SilentlyContinue
         } catch {}
     }
 }
 
+$script:SetUIEnabledSB = {
+    param([bool]$Enabled)
+    try {
+        if ($script:UiDispatcher -and -not $script:UiDispatcher.CheckAccess()) {
+            $null = $script:UiDispatcher.BeginInvoke($script:ApplyUiEnabledAction, [object[]]@($Enabled))
+        } else {
+            $script:ApplyUiEnabledAction.Invoke($Enabled)
+        }
+    } catch {
+        try {
+            Add-Content -Path $global:ServerToolkitLogPath `
+                -Value ("[UIERR] SetUIEnabledSB failed: " + $_.Exception.ToString() + "`r`n") `
+                -Encoding UTF8 -ErrorAction SilentlyContinue
+        } catch {}
+    }
+}
+
+function Update-StartButtonState {
+    try {
+        if (-not $StartButton) { return }
+
+        $createChecked = $false
+        $p12Checked    = $false
+
+        try { $createChecked = ($CreateNonRootCheck -and ($CreateNonRootCheck.IsChecked -eq $true)) } catch {}
+        try { $p12Checked    = ($UploadP12Check   -and ($UploadP12Check.IsChecked   -eq $true)) } catch {}
+
+        $canStart = ($createChecked -or $p12Checked)
+
+        if (-not $script:IsBackgroundRunning) {
+            $StartButton.IsEnabled = $canStart
+        }
+    } catch {}
+}
+
+$script:UnlockUIAction = [Action]{
+    try { $script:IsBackgroundRunning = $false } catch {}
+    try { Stop-LogTail } catch {}
+    try { & $script:SetUIEnabledSB $true } catch {}
+    try { if ($StartButton) { $StartButton.IsEnabled = $true } } catch {}
+    try { if ($StartButton) { $StartButton.Content = "Start Setup" } } catch {}
+    try {
+        Add-Content -Path $global:ServerToolkitLogPath `
+            -Value ("UI_UNLOCK_ACTION_RAN " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") + "`r`n") `
+            -Encoding UTF8 -ErrorAction SilentlyContinue
+    } catch {}
+}
+
+$script:SetUsernameAction = [Action[string]]{
+    param([string]$u)
+
+    try {
+        if (-not $UserBox) { return }
+        if ([string]::IsNullOrWhiteSpace($u)) { return }
+
+        if ($script:UiDispatcher -and -not $script:UiDispatcher.CheckAccess()) {
+            $null = $script:UiDispatcher.BeginInvoke([Action]{
+                try { if ($UserBox) { $UserBox.Text = $u } } catch {}
+            })
+        } else {
+            try { $UserBox.Text = $u } catch {}
+        }
+    } catch {}
+}
+
+$script:ShowMsgAction = [Action[string,string,[System.Windows.MessageBoxImage]]]{
+    param([string]$msg, [string]$title, [System.Windows.MessageBoxImage]$icon)
+    try {
+        [System.Windows.MessageBox]::Show(
+            $MainWindow,
+            $msg,
+            $title,
+            [System.Windows.MessageBoxButton]::OK,
+            $icon
+        ) | Out-Null
+    } catch {}
+}
+
+$script:UserExistsPromptFunc = [Func[string,string]]{
+    param([string]$u)
+
+    $msg = "The user '$u' already exists on this server.`r`n`r`n" +
+           "What would you like to do?`r`n`r`n" +
+           "YES  = Continue and VERIFY / FIX the existing user`r`n" +
+           "NO   = Cancel setup (no changes will be made)"
+
+    $res = [System.Windows.MessageBox]::Show(
+        $msg,
+        "User Already Exists",
+        [System.Windows.MessageBoxButton]::YesNo,
+        [System.Windows.MessageBoxImage]::Warning
+    )
+
+    if ($res -eq [System.Windows.MessageBoxResult]::Yes) { "continue" } else { "cancel" }
+}
+
+$script:P12OverwritePromptFunc = [Func[string,string,string]]{
+    param(
+        [string]$RemotePath,
+        [string]$LocalPath
+    )
+
+    try {
+        return (Show-P12OverwriteDialog -RemotePath $RemotePath -LocalPath $LocalPath)
+    } catch {
+        return "skip"
+    }
+
+    param(
+        [string]$RemotePath,
+        [string]$LocalPath
+    )
+
+    $rp = $RemotePath
+    if ([string]::IsNullOrWhiteSpace($rp)) { $rp = "(unknown)" }
+
+    $lp = $LocalPath
+    if ([string]::IsNullOrWhiteSpace($lp)) { $lp = "(unknown)" }
+
+    $msg = @()
+    $msg += "A P12 file already exists on the server at:"
+    $msg += "  $rp"
+    $msg += ""
+    $msg += "Local file selected:"
+    $msg += "  $lp"
+    $msg += ""
+    $msg += "Choose what to do:"
+    $msg += "YES    = Overwrite the existing remote file"
+    $msg += "NO     = Make a backup, then overwrite"
+    $msg += "CANCEL = Skip P12 handling and continue setup"
+    $msgText = ($msg -join "`r`n")
+
+    $res = [System.Windows.MessageBox]::Show(
+        $MainWindow,
+        $msgText,
+        "P12 Already Exists",
+        [System.Windows.MessageBoxButton]::YesNoCancel,
+        [System.Windows.MessageBoxImage]::Warning
+    )
+
+    if ($res -eq [System.Windows.MessageBoxResult]::Yes) { return "overwrite" }
+    if ($res -eq [System.Windows.MessageBoxResult]::No)  { return "backup" }
+    return "skip"
+}
+
+try { Add-Type -AssemblyName Microsoft.VisualBasic -ErrorAction SilentlyContinue } catch {}
+
+$script:OfferSaveProfileFunc = [Func[string,string,string,string,string,int,string]]{
+    param(
+        [string]$defaultProfileName,
+        [string]$serverHost,
+        [string]$sshPort,
+        [string]$username,
+        [string]$identityFile,
+        [int]$PromptFlag = 0   # 1 = setup complete, 0 = verification-only
+    )
+
+    try {
+        $name = $defaultProfileName
+        if ([string]::IsNullOrWhiteSpace($name)) { $name = $serverHost }
+
+        foreach ($c in [IO.Path]::GetInvalidFileNameChars()) {
+            $name = $name.Replace($c, '_')
+        }
+
+        $sshDir = Join-Path ([Environment]::GetFolderPath('UserProfile')) ".ssh"
+        if (-not (Test-Path $sshDir)) { New-Item -ItemType Directory -Path $sshDir | Out-Null }
+
+        $target = Join-Path $sshDir ("{0}_ssh_config.txt" -f $name)
+
+        $dt = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+
+        $preview = @()
+        $preview += "### This ssh_config file can also be used to import this server's settings into Termius. ###"
+        $preview += ""
+        $preview += "Host $name"
+        $preview += "    HostName $serverHost"
+        $preview += "    User $username"
+        $preview += "    Port $sshPort"
+        if (-not [string]::IsNullOrWhiteSpace($identityFile)) {
+            $preview += "    IdentityFile $identityFile"
+        }
+        $preview += ""
+        $preview += "# CreatedOn: $dt"
+        $keyPart = if (-not [string]::IsNullOrWhiteSpace($identityFile)) { "-i $identityFile " } else { "" }
+        $preview += "# SSH login: ssh ${keyPart}${username}@${serverHost}"
+        $preview += "# SFTP: sftp ${keyPart}${username}@${serverHost}"
+
+        $msg = @()
+
+        if ($PromptFlag -eq 1) {
+            $msg += "Connection verified & setup complete."
+        } else {
+            $msg += "Connection verified (no changes)."
+        }
+
+        $msg += ""
+        $msg += "Would you like to save this Connection Profile?"
+
+        $msg += ""
+        $msg += "Settings that will be saved:"
+        $msg += "HostName $serverHost"
+        $msg += "User $username"
+        $msg += "Port $sshPort"
+        if (-not [string]::IsNullOrWhiteSpace($identityFile)) {
+            $msg += "IdentityFile $identityFile"
+        } else {
+            $msg += "IdentityFile (none)"
+        }
+        $msg += ""
+        $msg += "Save this connection profile?"
+
+        $pickedName = Show-SaveProfileDialog `
+            -ServerHost $serverHost `
+            -SshPort $sshPort `
+            -Username $username `
+            -IdentityFile $identityFile `
+            -PromptFlag $PromptFlag
+
+        if ([string]::IsNullOrWhiteSpace($pickedName)) {
+            return "SKIPPED"
+        }
+
+        $name2 = $pickedName
+
+        foreach ($c in [IO.Path]::GetInvalidFileNameChars()) {
+            $name2 = $name2.Replace($c, '_')
+        }
+
+        $target2 = Join-Path $sshDir ("{0}_ssh_config.txt" -f $name2)
+
+        $final = @()
+        $final += "### This ssh_config file can also be used to import this server's settings into Termius. ###"
+        $final += ""
+        $final += "Host $name2"
+        $final += "    HostName $serverHost"
+        $final += "    User $username"
+        $final += "    Port $sshPort"
+        if (-not [string]::IsNullOrWhiteSpace($identityFile)) {
+            $final += "    IdentityFile $identityFile"
+        }
+        $final += ""
+        $final += "# CreatedOn: $dt"
+        $keyPart = if (-not [string]::IsNullOrWhiteSpace($identityFile)) { "-i $identityFile " } else { "" }
+        $final += "# SSH login: ssh ${keyPart}${username}@${serverHost}"
+        $final += "# SFTP: sftp ${keyPart}${username}@${serverHost}"
+
+        $final | Out-File -FilePath $target2 -Encoding ASCII -Force
+
+        return "SAVED:$target2"
+    }
+    catch {
+        return "ERROR:" + $_.Exception.Message
+    }
+}
+
+function Get-ShortNodeId {
+    param([string]$NodeId)
+
+    if ($NodeId -match '^[0-9a-f]{128}$') {
+        return ($NodeId.Substring(0,8) + "-" + $NodeId.Substring(120,8))
+    }
+    return ""
+}
+
+function Get-NodeIdFromP12Local {
+    param(
+        [Parameter(Mandatory=$true)][string]$P12Path,
+        [Parameter(Mandatory=$true)][string]$P12Pass
+    )
+
+    try {
+        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+        $cert.Import(
+            $P12Path,
+            $P12Pass,
+            [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+        )
+
+        $ecdsa = $null
+        try {
+            $ecdsa = [System.Security.Cryptography.X509Certificates.ECDsaCertificateExtensions]::GetECDsaPrivateKey($cert)
+        } catch {
+            $ecdsa = $null
+        }
+
+        if (-not $ecdsa) { return "" }
+
+        $pub = $ecdsa.ExportParameters($false)
+
+        if ($pub.Q.X -and $pub.Q.Y -and $pub.Q.X.Length -eq 32 -and $pub.Q.Y.Length -eq 32) {
+            $bytes = New-Object byte[] 64
+            [Array]::Copy($pub.Q.X, 0, $bytes, 0, 32)
+            [Array]::Copy($pub.Q.Y, 0, $bytes, 32, 32)
+
+            return ([BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
+        }
+
+        return ""
+    } catch {
+        return ""
+    }
+}
+
+function Protect-LogLine {
+    param([string]$Line)
+
+    if ($null -eq $Line) { return "" }
+
+    $s = $Line
+    $s = [regex]::Replace($s, '(?i)(\s-pw\s+)(?:"[^"]*"|''[^'']*''|\S+)', '$1"********"')
+    $s = [regex]::Replace($s, '(?is)(\b(?:echo|printf)\s+)(["''])(.*?)(\2\s*\|\s*sudo\s+-S\b)', '$1$2********$2 | sudo -S')
+    $s = [regex]::Replace($s, '(?is)(\becho\s+)(\\?"?)(.*?)(\\?"?\s*\|\s*sudo\s+-S\b)', '$1"********" | sudo -S')
+    $s = [regex]::Replace($s, '(?i)\b(password|passphrase|token|secret)\s*=\s*([^\s;]+)', '$1=********')
+    $s = [regex]::Replace($s, '(?i)\b([A-Za-z0-9+/]{40,}={0,2})\b', '********')
+    if ($s -match '(?i)\bsudo\s+-S\b' -or $s -match '(?i)\bchpasswd\b' -or $s -match '(?i)\bbase64\s+-d\b') {
+        return $s
+    }
+
+    return $s
+}
+
+$global:GuiLogLevels = @("WARN","ERROR","FATAL")
+$global:GuiLogRegex  = "^\s*(?:\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+)?\[(INFO|WARN|ERROR|FATAL)\]"
+$global:GuiShowDebug = $false
+$global:GuiStripTsRegex = "^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+"
+
+$script:AppendLog = [Action[string]]{
+    param([string]$text)
+
+    $guiOnly = $false
+        try {
+            if ($text -and $text.StartsWith("__GUIONLY__")) {
+                $guiOnly = $true
+
+                $text = $text.Substring(11)
+            }
+        } catch {}
+
+    $uiAlive = $false
+    try {
+        if ($script:UiDispatcher -and -not $script:UiDispatcher.HasShutdownStarted -and -not $script:UiDispatcher.HasShutdownFinished) {
+            $uiAlive = $true
+        }
+    } catch { $uiAlive = $false }
+
+    if ($text -match '(?i)(\s-pw\s+|sudo\s+-S\b|chpasswd\b|base64\s+-d\b|\btoken\s*=|\bsecret\s*=|\bpassword\s*=|\bpassphrase\s*=)') {
+        try {
+            $text = Protect-LogLine -Line $text
+        } catch {
+            $text = "[WARN] Sensitive output suppressed."
+        }
+    }
+
+    try {
+        $guiReady = ($uiAlive -and $GuiLogLevels -and $UiDispatcher -and $LogBox)
+
+        $stamp = (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff")
+        if ($null -eq $text) { $text = "" }
+
+        $line = $text
+
+        try { $line = Protect-LogLine -Line $line } catch {}
+
+        if ($line -notmatch "(\r?\n)$") { $line += "`r`n" }
+
+        if ($line -notmatch "^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+") {
+            $line = "$stamp $line"
+        }
+
+    try {
+        if (-not $script:SuppressFileWrite -and -not $guiOnly) {
+            if (-not [string]::IsNullOrEmpty($ServerToolkitLogPath)) {
+                Write-SharedLog -Path $ServerToolkitLogPath -Value $line
+            }
+        }
+    } catch {}
+
+    try {
+        if ($guiReady) {
+
+            $showInGui = $true
+            $lvl = $null
+
+            $m = [regex]::Match($line, $GuiLogRegex)
+            if ($m.Success -and $m.Groups.Count -gt 1) {
+                $lvl = $m.Groups[1].Value
+            } else {
+                if ($line -match "^\s*\[(WARN|ERROR|FATAL)\]") {
+                    $lvl = $matches[1]
+                }
+            }
+
+            if (-not $GuiShowDebug) {
+
+                if ($line -match "(?i)\b(CLEANUP:|OWNED_KEYS:|PROFILE_PROMPT_CHECK)\b") {
+                    $showInGui = $false
+                }
+                elseif ($line -match "TASKWATCH_") {
+                    $showInGui = $false
+                }
+                elseif ($line -match "Node ID extraction|Short ID|Connecting|Testing|switching|Root login failed|permission denied|Creating|Adding|Setting password|Copying|Testing login|Disabling root|Upload P12|Uploading P12|P12 uploaded|P12 backup|P12 installed|P12 successfully|Setup complete|complete|Profile saved") {
+                    $showInGui = $true
+                }
+                else {
+                    $showInGui = $false
+                }
+            }
+
+            if ($showInGui) {
+                $guiLine = ($line -replace $GuiStripTsRegex, "")
+
+                $level = "INFO"
+                try {
+                    $m2 = [regex]::Match($guiLine, '^\[(INFO|WARN|ERROR|FATAL)\]')
+                    if ($m2.Success -and $m2.Groups.Count -gt 1) {
+                        $level = $m2.Groups[1].Value
+                    }
+                } catch { $level = "INFO" }
+
+                $guiLine = ($guiLine -replace '^\[(INFO|WARN|ERROR|FATAL)\]\s*', '')
+
+                $guiLine = $guiLine `
+                    -replace 'Disabling root SSH login and global password auth.*', 'Securing SSH configuration...' `
+                    -replace 'Uploading P12 via SCP as .*', 'Uploading P12 wallet...' `
+                    -replace 'Upload P12 enabled\. Starting secure upload.*', 'Preparing P12 upload...' `
+                    -replace 'Adding .* to sudo group.*', 'Granting sudo access...' `
+                    -replace 'Setting password for .*', 'Setting user password...' `
+                    -replace 'Copying authorized_keys.*', 'Configuring SSH access...' `
+                    -replace 'Setup complete.*', 'Setup complete.'
+
+                $uiWrite = [Action[object,string,string]]{
+                    param($rtb, $txt, $lvl)
+                    try {
+                        if (-not $rtb) { return }
+
+                            try {
+                                if ($rtb.Dispatcher.HasShutdownStarted -or $rtb.Dispatcher.HasShutdownFinished) { return }
+                                if (-not $rtb.IsLoaded) { return }
+                            } catch { return }
+
+                        $brush = [System.Windows.Media.Brushes]::LightGray
+                        switch ($lvl) {
+                            "INFO"  { $brush = [System.Windows.Media.Brushes]::LightGray }
+                            "WARN"  { $brush = [System.Windows.Media.Brushes]::Khaki }
+                            "ERROR" { $brush = [System.Windows.Media.Brushes]::OrangeRed }
+                            "FATAL" { $brush = [System.Windows.Media.Brushes]::Red }
+                            default { $brush = [System.Windows.Media.Brushes]::LightGray }
+                        }
+
+                        $doc = $rtb.Document
+                        if (-not $doc.Blocks.FirstBlock) {
+                            $p = New-Object System.Windows.Documents.Paragraph
+                            $p.Margin = [System.Windows.Thickness]::new(0)
+                            $doc.Blocks.Add($p)
+                        }
+
+                        $run = New-Object System.Windows.Documents.Run($txt)
+                        $run.Foreground = $brush
+
+                        $para = $doc.Blocks.LastBlock
+                        if (-not ($para -is [System.Windows.Documents.Paragraph])) {
+                            $para = New-Object System.Windows.Documents.Paragraph
+                            $para.Margin = [System.Windows.Thickness]::new(0)
+                            $doc.Blocks.Add($para)
+                        }
+                        $para.Inlines.Add($run)
+
+                        $rtb.ScrollToEnd()
+                    } catch {
+                        try {
+                            $s2 = (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff")
+                            Add-Content -Path $global:ServerToolkitLogPath -Value ("$s2 [UIERR] UI write failed: " + $_.Exception.Message + "`r`n") -Encoding UTF8 -ErrorAction SilentlyContinue
+                        } catch {}
+                    }
+                }
+
+                if ($UiDispatcher.CheckAccess()) {
+                    $uiWrite.Invoke($LogBox, $guiLine, $level)
+                } else {
+                    $null = $UiDispatcher.BeginInvoke($uiWrite, [object[]]@($LogBox, $guiLine, $level))
+                }
+            }
+        }
+    } catch {
+        try {
+            $s = (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff")
+            Add-Content -Path $global:ServerToolkitLogPath -Value ("$s [UIERR] Dispatcher failure: " + $_.Exception.Message + "`r`n") -Encoding UTF8 -ErrorAction SilentlyContinue
+        } catch {}
+    }
+
+    } catch {
+        try {
+            Add-Content -Path $global:ServerToolkitLogPath -Value ("[LOGFATAL] AppendLog crashed:`r`n" + $_.Exception.ToString() + "`r`n") -Encoding UTF8 -ErrorAction SilentlyContinue
+        } catch {}
+    }
+}
+
+$AppendLog = $script:AppendLog
+
+if (-not $script:SshSessions) {
+    $script:SshSessions = @{}
+}
+
+function Update-OpenServerButtonVisibility {
+    if (-not $OpenServerButton) { return }
+
+    $h = ""; $p=""; $u=""; $k=""
+    try { $h = ($HostBox.Text).Trim() } catch {}
+    try { $p = ($PortBox.Text).Trim() } catch {}
+    try { $u = ($UserBox.Text).Trim() } catch {}
+    try { $k = ($KeyBox.Text).Trim() } catch {}
+
+    $portOk = ($p -match '^\d+$')
+    $hasBasics = (-not [string]::IsNullOrWhiteSpace($h)) -and $portOk -and (-not [string]::IsNullOrWhiteSpace($u))
+
+    $canOpen = $hasBasics -and (
+        (-not [string]::IsNullOrWhiteSpace($k)) -or $true
+    )
+
+    try {
+        $OpenServerButton.IsEnabled = $canOpen
+        $OpenServerButton.Opacity   = if ($canOpen) { 1.0 } else { 0.4 }
+
+        if ($canOpen) {
+            $OpenServerButton.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#000000")
+        } else {
+            $OpenServerButton.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#3b3f46")
+        }
+
+    } catch {}
+}
+
+try {
+    if ($HostBox) { $HostBox.Add_TextChanged({ Update-OpenServerButtonVisibility }) }
+    if ($PortBox) { $PortBox.Add_TextChanged({ Update-OpenServerButtonVisibility }) }
+    if ($UserBox) { $UserBox.Add_TextChanged({ Update-OpenServerButtonVisibility }) }
+    if ($KeyBox)  { $KeyBox.Add_TextChanged({ Update-OpenServerButtonVisibility }) }
+} catch {}
+
+try { Update-OpenServerButtonVisibility } catch {}
+try { Update-StartButtonState } catch {}
+
+if ($OpenServerButton) {
+    $OpenServerButton.Add_Click({
+
+        $h  = ""
+        $p  = ""
+        $u  = ""
+        $k  = ""
+
+        try { $h = ($HostBox.Text).Trim() } catch { $h = "" }
+        try { $p = ($PortBox.Text).Trim() } catch { $p = "" }
+        try { $u = ($UserBox.Text).Trim() } catch { $u = "" }
+        try { $k = ($KeyBox.Text).Trim()  } catch { $k = "" }
+
+        if ([string]::IsNullOrWhiteSpace($h) -or
+            [string]::IsNullOrWhiteSpace($u) -or
+            ($p -notmatch '^\d+$')) {
+
+            try {
+                [System.Windows.MessageBox]::Show(
+                    $MainWindow,
+                    "Host, Port, and Username are required.",
+                    "Open Server",
+                    [System.Windows.MessageBoxButton]::OK,
+                    [System.Windows.MessageBoxImage]::Warning
+                ) | Out-Null
+            } catch {}
+            return
+        }
+
+        $winSsh = Join-Path $env:WINDIR "System32\OpenSSH\ssh.exe"
+        if (-not (Test-Path $winSsh)) {
+            try {
+                [System.Windows.MessageBox]::Show(
+                    $MainWindow,
+                    "OpenSSH client (ssh.exe) not found.",
+                    "Open Server",
+                    [System.Windows.MessageBoxButton]::OK,
+                    [System.Windows.MessageBoxImage]::Error
+                ) | Out-Null
+            } catch {}
+            return
+        }
+
+        $knownHostsPath = $null
+        try {
+            $sshDir = Join-Path $env:USERPROFILE ".ssh"
+            if (-not (Test-Path $sshDir)) { New-Item -ItemType Directory -Path $sshDir | Out-Null }
+            $knownHostsPath = Join-Path $sshDir "known_hosts"
+            if (-not (Test-Path $knownHostsPath)) { New-Item -ItemType File -Path $knownHostsPath -Force | Out-Null }
+        } catch {
+            $knownHostsPath = (Join-Path $env:USERPROFILE ".ssh\known_hosts")
+        }
+
+        try {
+            $probeArgs = @(
+                "-p", $p,
+                "-o", "BatchMode=yes",
+                "-o", "NumberOfPasswordPrompts=0",
+                "-o", "ConnectTimeout=4",
+                "-o", "StrictHostKeyChecking=yes",
+                "-o", "UserKnownHostsFile=$knownHostsPath",
+                "-o", "GlobalKnownHostsFile=NUL"
+            )
+
+            if (-not [string]::IsNullOrWhiteSpace($k)) { $probeArgs += @("-i", $k) }
+
+            $probeArgs += "$u@$h"
+            $probeArgs += "exit"
+
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $winSsh
+            $psi.Arguments = ($probeArgs -join " ")
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError  = $true
+            $psi.CreateNoWindow = $true
+
+            $proc = New-Object System.Diagnostics.Process
+            $proc.StartInfo = $psi
+            $null = $proc.Start()
+
+            if ($proc.WaitForExit(6000)) {
+                $stderr = ""
+                try { $stderr = $proc.StandardError.ReadToEnd() } catch { $stderr = "" }
+
+                if ($stderr -match '(?i)REMOTE HOST IDENTIFICATION HAS CHANGED' -or
+                    $stderr -match '(?i)Host key verification failed' -or
+                    $stderr -match '(?i)Offending .* key in') {
+
+                    try { if ($script:AppendLog) { $script:AppendLog.Invoke("[WARN] Host key mismatch detected. Resetting known_hosts entries for ${h}:${p}...`r`n") } } catch {}
+                    try { Reset-HostKeysForServer -HostName $h -Port $p } catch {}
+                }
+            } else {
+                try { $proc.Kill() } catch {}
+            }
+        } catch {
+
+        }
+
+        $args = @(
+            "-p", $p,
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "UserKnownHostsFile=$knownHostsPath",
+            "-o", "GlobalKnownHostsFile=NUL"
+        )
+
+        if (-not [string]::IsNullOrWhiteSpace($k)) { $args += @("-i", "`"$k`"") }
+        $args += "$u@$h"
+
+        $title = "ServerToolkit SSH ${u}@${h}:${p}"
+        $cmd   = "title $title & `"$winSsh`" " + ($args -join " ")
+
+        try {
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $cmd | Out-Null
+        } catch {
+            try { $script:AppendLog.Invoke("[ERROR] Failed to launch ssh window: $($_.Exception.Message)`r`n") } catch {}
+        }
+    })
+}
+
+try {
+    if ($NewUserPanel) { $NewUserPanel.IsEnabled = ($CreateNonRootCheck -and ($CreateNonRootCheck.IsChecked -eq $true)) }
+    if ($P12Panel)     { $P12Panel.IsEnabled     = ($UploadP12Check   -and ($UploadP12Check.IsChecked -eq $true)) }
+} catch {}
+
+if ($CreateNonRootCheck -and $NewUserPanel) {
+
+    $CreateNonRootCheck.Add_Checked({
+        try { $NewUserPanel.IsEnabled = $true } catch {}
+        try { Update-StartButtonState } catch {}
+        try { if ($script:AppendLog) { $script:AppendLog.Invoke("DEBUG: CreateNonRootCheck Checked. NewUserPanel enabled.`r`n") } } catch {}
+    })
+
+    $CreateNonRootCheck.Add_Unchecked({
+        try { $NewUserPanel.IsEnabled = $false } catch {}
+        try { Update-StartButtonState } catch {}
+        try { if ($script:AppendLog) { $script:AppendLog.Invoke("DEBUG: CreateNonRootCheck Unchecked. NewUserPanel disabled.`r`n") } } catch {}
+    })
+}
+
+if ($UploadP12Check -and $P12Panel) {
+
+    $UploadP12Check.Add_Checked({
+        try { $P12Panel.IsEnabled = $true } catch {}
+        try { Update-StartButtonState } catch {}
+        try { if ($script:AppendLog) { $script:AppendLog.Invoke("DEBUG: UploadP12Check Checked. P12Panel enabled.`r`n") } } catch {}
+    })
+
+    $UploadP12Check.Add_Unchecked({
+        try { $P12Panel.IsEnabled = $false } catch {}
+        try { Update-StartButtonState } catch {}
+
+        try { if ($P12PathBox) { $P12PathBox.Text = "" } } catch {}
+        try { if ($P12PasswordBox) { $P12PasswordBox.Password = "" } } catch {}
+
+        try { $script:LastValidatedP12Alias = "" } catch {}
+        try {
+            if ($script:TaskResult) {
+                $script:TaskResult.P12Alias      = ""
+                $script:TaskResult.P12RemotePath = ""
+                $script:TaskResult.P12LocalPath  = ""
+                $script:TaskResult.ShowP12Alias  = 0
+            }
+        } catch {}
+
+        try { if ($script:AppendLog) { $script:AppendLog.Invoke("DEBUG: UploadP12Check Unchecked. P12Panel disabled + cleared P12 fields + cleared cached alias.`r`n") } } catch {}
+    })
+}
+
+try {
+    if ($P12PathBox) {
+
+        try { $script:LastP12Path = ($P12PathBox.Text).Trim() } catch { $script:LastP12Path = "" }
+
+        $P12PathBox.Add_TextChanged({
+            try {
+                $cur = ""
+                try { $cur = ($P12PathBox.Text).Trim() } catch { $cur = "" }
+
+                if ($cur -ne $script:LastP12Path) {
+                    try { if ($P12PasswordBox) { $P12PasswordBox.Password = "" } } catch {}
+
+                    try { $script:LastValidatedP12Alias = "" } catch {}
+                    try {
+                        if ($script:TaskResult) {
+                            $script:TaskResult.P12Alias     = ""
+                            $script:TaskResult.ShowP12Alias = 0
+                        }
+                    } catch {}
+
+                    try { if ($script:AppendLog) { $script:AppendLog.Invoke("DEBUG: P12 path changed (strict). Cleared P12 passphrase field + cleared cached alias.`r`n") } } catch {}
+                    $script:LastP12Path = $cur
+                }
+            } catch {}
+        })
+    }
+} catch {}
+
+$script:SuppressFileWrite = $false
+
+$script:LogTailTimer      = $null
+$script:LogTailLastPos    = 0
+
+function Start-LogTail {
+    try {
+        if (-not $global:ServerToolkitLogPath) { return }
+        if (-not (Test-Path $global:ServerToolkitLogPath)) { return }
+
+        try {
+            $script:LogTailLastPos = (Get-Item -LiteralPath $global:ServerToolkitLogPath).Length
+        } catch {
+            $script:LogTailLastPos = 0
+        }
+
+        if ($script:LogTailTimer) {
+            try { $script:LogTailTimer.Stop() } catch {}
+            $script:LogTailTimer = $null
+        }
+
+        $t = New-Object System.Windows.Threading.DispatcherTimer
+        $t.Interval = [TimeSpan]::FromMilliseconds(250)
+
+        $t.Add_Tick({
+            try {
+                if (-not $global:ServerToolkitLogPath) { return }
+                if (-not (Test-Path $global:ServerToolkitLogPath)) { return }
+
+                $len = 0
+                try { $len = (Get-Item -LiteralPath $global:ServerToolkitLogPath).Length } catch { return }
+                if ($len -le $script:LogTailLastPos) { return }
+
+                $fs = $null
+                try {
+                    $fs = [System.IO.File]::Open($global:ServerToolkitLogPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                    $null = $fs.Seek($script:LogTailLastPos, [System.IO.SeekOrigin]::Begin)
+
+                    $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8, $true, 4096, $true)
+                    $newText = $sr.ReadToEnd()
+                    $sr.Dispose()
+
+                    $script:LogTailLastPos = $fs.Position
+                } finally {
+                    try { if ($fs) { $fs.Dispose() } } catch {}
+                }
+
+                if ([string]::IsNullOrWhiteSpace($newText)) { return }
+
+                $script:SuppressFileWrite = $true
+                try {
+                    foreach ($ln in ($newText -split "`r?`n")) {
+                        if ([string]::IsNullOrWhiteSpace($ln)) { continue }
+                        $script:AppendLog.Invoke($ln + "`r`n")
+                    }
+                } finally {
+                    $script:SuppressFileWrite = $false
+                }
+            } catch {
+                try {
+                    Add-Content -Path $global:ServerToolkitLogPath -Value ("[UIERR] LogTail failed: " + $_.Exception.ToString() + "`r`n") -Encoding UTF8 -ErrorAction SilentlyContinue
+                } catch {}
+            }
+        })
+
+        $script:LogTailTimer = $t
+        $t.Start()
+    } catch {}
+}
+
+function Stop-LogTail {
+    try {
+        if ($script:LogTailTimer) {
+            try { $script:LogTailTimer.Stop() } catch {}
+            $script:LogTailTimer = $null
+        }
+    } catch {}
+}
+
+$script:AppendLog.Invoke("DEBUG: DisableRootCheck initial IsChecked = '$($DisableRootCheck.IsChecked)'`r`n")
 $script:useKeyAuth       = $false
 $script:usePasswordAuth  = $false
 $script:sudoPassword     = $null
-$script:agentKeyAddedThisSession = $false
 $global:PlinkPath        = ""
+$global:PscpPath         = ""
+
+if (-not $script:OwnedAgentKeyPaths) {
+    $script:OwnedAgentKeyPaths = New-Object System.Collections.Generic.List[string]
+}
+
+$script:SshAddUnlockProc        = $null
+$script:SshAddAutoResumeRunning = $false
+
+$script:SshAgentPrevStartType = $null
+$script:SshAgentPrevStatus    = $null
+$script:SshAgentSessionDir    = $null
+$script:SshAgentReadyFile     = $null
+$script:SshAgentCloseFile     = $null
+$script:SshAgentHelperProc    = $null
+$script:SshAgentTouched       = $false
+
+$script:KeyCleanupWatchdogProc = $null
+
+$script:TaskWatchTimer = $null
+$script:IsBackgroundRunning = $false
+$script:ActiveTask = $null
+
+$script:TaskResult = [hashtable]::Synchronized(@{
+    ServerHost = ""
+    SshPort    = ""
+    User       = ""
+    Key        = ""
+    Prompt     = 0
+
+    RootDisabled = 0
+
+    StatusTitle   = ""
+    StatusMessage = ""
+    StatusIcon    = "Information"
+    ShowStatus    = 0
+
+    P12Alias      = ""
+    P12RemotePath = ""
+    P12LocalPath  = ""
+    P12NodeId     = ""
+    ShowP12Alias  = 0
+})
+
+function Start-TaskWatchTimer {
+    param([Parameter(Mandatory=$true)]$Task)
+
+    $script:WatchedTask = $Task
+
+    if ($script:TaskWatchTimer) {
+        try { $script:TaskWatchTimer.Stop() } catch {}
+        $script:TaskWatchTimer = $null
+    }
+
+    $t = New-Object System.Windows.Threading.DispatcherTimer
+    $t.Interval = [TimeSpan]::FromMilliseconds(250)
+
+    try {
+        Add-Content -Path $global:ServerToolkitLogPath `
+            -Value ("TASKWATCH_STARTED " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") + "`r`n") `
+            -Encoding UTF8 -ErrorAction SilentlyContinue
+    } catch {}
+
+    $t.Add_Tick({
+        param($sender, $e)
+
+        $Task = $script:WatchedTask
+
+        try {
+            if (-not $Task -or -not $Task.PowerShell) { return }
+
+            $state = $null
+            try { $state = $Task.PowerShell.InvocationStateInfo.State } catch { $state = $null }
+
+            $isDone = $false
+            try {
+                if ($state -in @("Completed","Failed","Stopped")) { $isDone = $true }
+            } catch {}
+
+            try {
+                if (-not $isDone -and $Task.AsyncResult -and $Task.AsyncResult.IsCompleted) { $isDone = $true }
+            } catch {}
+
+            if (-not $isDone) { return }
+
+            try {
+                Add-Content -Path $global:ServerToolkitLogPath `
+                    -Value ("TASKWATCH_DONE State=" + $state + " " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") + "`r`n") `
+                    -Encoding UTF8 -ErrorAction SilentlyContinue
+            } catch {}
+
+            try { $sender.Stop() } catch { try { $t.Stop() } catch {} }
+
+            try {
+                if ($Task.AsyncResult) {
+                    $null = $Task.PowerShell.EndInvoke($Task.AsyncResult)
+                }
+                $Task.Status = "Completed"
+            }
+            catch {
+                $Task.Status    = "Faulted"
+                $Task.IsFaulted = $true
+                $Task.Exception = $_.Exception
+                try {
+                    Add-Content -Path $global:ServerToolkitLogPath `
+                        -Value ("BG_ENDINVOKE_EXCEPTION`r`n" + $_.Exception.ToString() + "`r`n") `
+                        -Encoding UTF8 -ErrorAction SilentlyContinue
+                } catch {}
+            }
+            finally {
+                try { $Task.PowerShell.Dispose() } catch {}
+                try { $Task.Runspace.Close(); $Task.Runspace.Dispose() } catch {}
+
+                try {
+                    if ($script:TaskResult -and $script:TaskResult.ShowStatus -eq 1 -and
+                        -not [string]::IsNullOrWhiteSpace($script:TaskResult.StatusMessage)) {
+
+                        $icon = [System.Windows.MessageBoxImage]::Information
+                        switch -Regex ($script:TaskResult.StatusIcon) {
+                            '^Error$'   { $icon = [System.Windows.MessageBoxImage]::Error }
+                            '^Warning$' { $icon = [System.Windows.MessageBoxImage]::Warning }
+                            default     { $icon = [System.Windows.MessageBoxImage]::Information }
+                        }
+
+                        [System.Windows.MessageBox]::Show(
+                            $MainWindow,
+                            $script:TaskResult.StatusMessage,
+                            $(if ($script:TaskResult.StatusTitle) { $script:TaskResult.StatusTitle } else { "Info" }),
+                            [System.Windows.MessageBoxButton]::OK,
+                            $icon
+                        ) | Out-Null
+                    }
+                } catch {
+                    try {
+                        Add-Content -Path $global:ServerToolkitLogPath `
+                            -Value ("[UIERR] Status dialog failed: " + $_.Exception.ToString() + "`r`n") `
+                            -Encoding UTF8 -ErrorAction SilentlyContinue
+                    } catch {}
+                }
+
+                try {
+                    if ($script:TaskResult -and $script:TaskResult.ShowP12Alias -eq 1) {
+                        try {
+                            Show-P12AliasDialog `
+                                -Alias $script:TaskResult.P12Alias `
+                                -RemotePath $script:TaskResult.P12RemotePath `
+                                -LocalPath $script:TaskResult.P12LocalPath `
+                                -NodeId $script:TaskResult.P12NodeId
+                        }
+                        catch {
+                            try {
+                                Add-Content -Path $global:ServerToolkitLogPath -Value (
+                                    (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") +
+                                    " [UIERR] Show-P12AliasDialog failed: " +
+                                    $_.Exception.ToString() + "`r`n"
+                                ) -Encoding UTF8 -ErrorAction SilentlyContinue
+                            } catch {}
+                        }
+                    }
+                }
+                catch {
+                    try {
+                        Add-Content -Path $global:ServerToolkitLogPath -Value (
+                            (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") +
+                            " [UIERR] P12 dialog wrapper failed: " +
+                            $_.Exception.ToString() + "`r`n"
+                        ) -Encoding UTF8 -ErrorAction SilentlyContinue
+                    } catch {}
+                }
+
+                try {
+                    if ($script:OfferSaveProfileFunc -and $script:TaskResult -and
+                        -not [string]::IsNullOrWhiteSpace($script:TaskResult.ServerHost)) {
+
+                        $pf = 0
+                        try { $pf = [int]$script:TaskResult.Prompt } catch { $pf = 0 }
+
+                        try {
+                            Add-Content -Path $global:ServerToolkitLogPath `
+                                -Value ("PROFILE_PROMPT_CHECK pf=" + $pf + " host=" + $script:TaskResult.ServerHost + " user=" + $script:TaskResult.User + "`r`n") `
+                                -Encoding UTF8 -ErrorAction SilentlyContinue
+                        } catch {}
+
+                        $result = $script:OfferSaveProfileFunc.Invoke(
+                            "",
+                            $script:TaskResult.ServerHost,
+                            $script:TaskResult.SshPort,
+                            $script:TaskResult.User,
+                            $script:TaskResult.Key,
+                            $pf
+                        )
+
+                        if ($result -like "SAVED:*") {
+                            try { $script:AppendLog.Invoke("Profile saved: $($result.Substring(6))`r`n") } catch {}
+                        } elseif ($result -like "ERROR:*") {
+                            try { $script:AppendLog.Invoke("[WARN] Profile save failed: $result`r`n") } catch {}
+                        }
+                    }
+                } catch {
+                    try {
+                        Add-Content -Path $global:ServerToolkitLogPath `
+                            -Value ("[UIERR] OfferSaveProfileFunc failed: " + $_.Exception.ToString() + "`r`n") `
+                            -Encoding UTF8 -ErrorAction SilentlyContinue
+                    } catch {}
+                }
+
+                try {
+                    $rd = 0
+                    $newUiUser = ""
+
+                    try { if ($script:TaskResult) { $rd = [int]$script:TaskResult.RootDisabled } } catch { $rd = 0 }
+                    try { if ($script:TaskResult) { $newUiUser = [string]$script:TaskResult.User } } catch { $newUiUser = "" }
+
+                    if ($rd -eq 1 -and -not [string]::IsNullOrWhiteSpace($newUiUser) -and $newUiUser -ne "root") {
+                        try { if ($script:SetUsernameAction) { $script:SetUsernameAction.Invoke($newUiUser) } } catch {}
+                    }
+                } catch {}
+
+                try {
+                    Cleanup-AgentOwnedKeys
+                } catch {
+                    try {
+                        Add-Content -Path $global:ServerToolkitLogPath `
+                            -Value ((Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") + " [WARN] Immediate agent cleanup failed: " + $_.Exception.Message + "`r`n") `
+                            -Encoding UTF8 -ErrorAction SilentlyContinue
+                    } catch {}
+                }
+
+                try { Signal-SshAgentSessionEnd } catch {}
+                try { if ($UnlockUIAction) { $UnlockUIAction.Invoke() } } catch {}
+                try { $script:IsBackgroundRunning = $false } catch {}
+
+                try {
+                    Add-Content -Path $global:ServerToolkitLogPath `
+                        -Value ("[INFO] TASK_UI_UNLOCKED State=" + $state + " " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") + "`r`n") `
+                        -Encoding UTF8 -ErrorAction SilentlyContinue
+                } catch {}
+
+                try { $script:WatchedTask = $null } catch {}
+                try { $script:TaskWatchTimer = $null } catch {}
+            }
+        }
+        catch {
+            try {
+                Add-Content -Path $global:ServerToolkitLogPath `
+                    -Value ("[UIERR] TaskWatchTimer tick failed:`r`n" + $_.Exception.ToString() + "`r`n") `
+                    -Encoding UTF8 -ErrorAction SilentlyContinue
+            } catch {}
+        }
+    })
+
+    $script:TaskWatchTimer = $t
+    $t.Start()
+}
+
+function Stop-ActiveBackgroundTask {
+    param([string]$Reason = "user-close")
+
+    try { Add-Content -Path $global:ServerToolkitLogPath -Value ((Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") + " [WARN] Stop-ActiveBackgroundTask reason=$Reason`r`n") -Encoding UTF8 -ErrorAction SilentlyContinue } catch {}
+
+    try { Stop-LogTail } catch {}
+    try {
+        if ($script:TaskWatchTimer) {
+            try { $script:TaskWatchTimer.Stop() } catch {}
+            $script:TaskWatchTimer = $null
+        }
+    } catch {}
+
+    try {
+        $t = $script:ActiveTask
+        if ($t) {
+
+            try {
+                if ($t.PowerShell) {
+                    try { $t.PowerShell.Stop() } catch {}
+                }
+            } catch {}
+
+            try {
+                if ($t.Runspace) {
+                    try { $t.Runspace.Close() } catch {}
+                    try { $t.Runspace.Dispose() } catch {}
+                }
+            } catch {}
+
+            try { if ($t.PowerShell) { $t.PowerShell.Dispose() } } catch {}
+        }
+    } catch {}
+
+    try { $script:ActiveTask = $null } catch {}
+    try { $script:IsBackgroundRunning = $false } catch {}
+    try { if ($UnlockUIAction) { $UnlockUIAction.Invoke() } } catch {}
+}
+
+function Invoke-BackgroundUI {
+    param(
+        [Parameter(Mandatory=$true)]
+        [ScriptBlock]$Work,
+
+        [hashtable]$Context = $null
+    )
+
+    try {
+        $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+        $rs.ApartmentState = [System.Threading.ApartmentState]::STA
+        $rs.ThreadOptions  = 'ReuseThread'
+        $rs.Open()
+
+        $rs.SessionStateProxy.SetVariable("ServerToolkitLogPath", $global:ServerToolkitLogPath)
+        $rs.SessionStateProxy.SetVariable("UiDispatcher", $script:UiDispatcher)
+
+        $rs.SessionStateProxy.SetVariable("UnlockUIAction",        $script:UnlockUIAction)
+        $rs.SessionStateProxy.SetVariable("SetUsernameAction",     $script:SetUsernameAction)
+        $rs.SessionStateProxy.SetVariable("ShowMsgAction",         $script:ShowMsgAction)
+        $rs.SessionStateProxy.SetVariable("UserExistsPromptFunc",  $script:UserExistsPromptFunc)
+        $rs.SessionStateProxy.SetVariable("P12OverwritePromptFunc",$script:P12OverwritePromptFunc)
+
+        $rs.SessionStateProxy.SetVariable("LogBox", $LogBox)
+        $rs.SessionStateProxy.SetVariable("GuiLogLevels", $global:GuiLogLevels)
+        $rs.SessionStateProxy.SetVariable("GuiLogRegex", $global:GuiLogRegex)
+        $rs.SessionStateProxy.SetVariable("GuiShowDebug", $global:GuiShowDebug)
+        $rs.SessionStateProxy.SetVariable("GuiStripTsRegex", $global:GuiStripTsRegex)
+
+        if ($Context) {
+            foreach ($k in $Context.Keys) {
+                try { $rs.SessionStateProxy.SetVariable($k, $Context[$k]) } catch {}
+            }
+        }
+
+        $ps = [System.Management.Automation.PowerShell]::Create()
+        $ps.Runspace = $rs
+
+        $ps.AddScript({
+            try {
+                $AppendLog = [Action[string]]{
+                    param([string]$t)
+                    try {
+                        if (-not $ServerToolkitLogPath) { return }
+
+                        $stamp = (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff")
+                        $line = $t
+                        if ($null -eq $line) { $line = "" }
+
+                        if ($line -notmatch "(\r?\n)$") { $line += "`r`n" }
+                        if ($line -notmatch "^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+") {
+                            $line = "$stamp $line"
+                        }
+
+                        try {
+                            $bytes = [System.Text.Encoding]::UTF8.GetBytes($line)
+                            $fs = [System.IO.File]::Open(
+                                $ServerToolkitLogPath,
+                                [System.IO.FileMode]::Append,
+                                [System.IO.FileAccess]::Write,
+                                [System.IO.FileShare]::ReadWrite
+                            )
+                            try {
+                                $fs.Write($bytes, 0, $bytes.Length)
+                                $fs.Flush()
+                            } finally {
+                                $fs.Dispose()
+                            }
+                        } catch {}
+                    } catch {}
+                }
+
+                Add-Content -Path $ServerToolkitLogPath `
+                    -Value ("BG_RUNSPACE_ENTERED " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") + "`r`n") `
+                    -Encoding UTF8 -ErrorAction SilentlyContinue
+            } catch {}
+        }) | Out-Null
+
+        $funcImport = @()
+        $funcImport += "function Reset-HostKeysForServer { $(${function:Reset-HostKeysForServer}.ToString()) }"
+        $funcImport += "function Ensure-PuttyTools { $(${function:Ensure-PuttyTools}.ToString()) }"
+        $funcImport += "function Run-SshCommand { $(${function:Run-SshCommand}.ToString()) }"
+
+        $funcImport += "function Get-ServerToolkitAgentSessionDir { $(${function:Get-ServerToolkitAgentSessionDir}.ToString()) }"
+        $funcImport += "function Get-ServerToolkitOwnedPubKeysFile { $(${function:Get-ServerToolkitOwnedPubKeysFile}.ToString()) }"
+        $funcImport += "function Get-AgentPubKeyLines { $(${function:Get-AgentPubKeyLines}.ToString()) }"
+        $funcImport += "function Write-OwnedAgentPubKeys { $(${function:Write-OwnedAgentPubKeys}.ToString()) }"
+        $funcImport += "function Read-OwnedAgentPubKeys { $(${function:Read-OwnedAgentPubKeys}.ToString()) }"
+        $funcImport += "function Remove-OwnedAgentPubKeyLine { $(${function:Remove-OwnedAgentPubKeyLine}.ToString()) }"
+
+        $funcImport += "function Ensure-SshAgentWithKey { $(${function:Ensure-SshAgentWithKey}.ToString()) }"
+        $funcImport += "function Cleanup-AgentOwnedKeys { $(${function:Cleanup-AgentOwnedKeys}.ToString()) }"
+
+        $ps.AddScript(($funcImport -join "`r`n")) | Out-Null
+
+        $ps.AddScript($Work) | Out-Null
+
+        $async = $ps.BeginInvoke()
+
+        return [pscustomobject]@{
+            Id          = Get-Random -Minimum 1000 -Maximum 9999
+            Status      = "Running"
+            IsFaulted   = $false
+            Exception   = $null
+            PowerShell  = $ps
+            Runspace    = $rs
+            AsyncResult = $async
+        }
+    }
+    catch {
+        try {
+            Add-Content -Path $global:ServerToolkitLogPath `
+                -Value ("INVOKE_BACKGROUNDUI_FAILED`r`n" + $_.Exception.ToString()) `
+                -Encoding UTF8
+        } catch {}
+        return $null
+    }
+}
 
 function Ensure-PuttyTools {
     $global:PlinkPath = ""
+    $global:PscpPath  = ""
+
     try {
         $plinkCmd = Get-Command plink.exe -ErrorAction Stop
         $global:PlinkPath = $plinkCmd.Source
-    } catch {
-        $AppendLog.Invoke("[INFO] plink.exe not found. Attempting to download PuTTY tools...`r`n")
-        $arch = if ([IntPtr]::Size -eq 8) {"w64"} else {"w32"}
-        $plinkUrl = "https://the.earth.li/~sgtatham/putty/latest/$arch/plink.exe"
-        $puttygenUrl = "https://the.earth.li/~sgtatham/putty/latest/$arch/puttygen.exe"
-        $tempPath = [IO.Path]::GetTempPath()
-        $plinkTarget = Join-Path $tempPath "plink.exe"
-        try {
-            (New-Object Net.WebClient).DownloadFile($plinkUrl, $plinkTarget)
-            $AppendLog.Invoke("Downloaded plink.exe to $plinkTarget`r`n")
-            $global:PlinkPath = $plinkTarget
-        } catch {
-            $AppendLog.Invoke("[ERROR] Failed to download plink.exe. Please install PuTTY or provide plink.exe manually.`r`n")
-            return $false
-        }
-        $puttygenTarget = Join-Path $tempPath "puttygen.exe"
-        try {
-            (New-Object Net.WebClient).DownloadFile($puttygenUrl, $puttygenTarget)
-            $AppendLog.Invoke("Downloaded puttygen.exe to $puttygenTarget`r`n")
-        } catch {
-            $AppendLog.Invoke("[WARN] Could not download puttygen.exe. .ppk conversion might require manual steps.`r`n")
-        }
+    } catch {}
+
+    try {
+        $pscpCmd = Get-Command pscp.exe -ErrorAction Stop
+        $global:PscpPath = $pscpCmd.Source
+    } catch {}
+
+    if ($global:PlinkPath -and (Test-Path -LiteralPath $global:PlinkPath) -and
+        $global:PscpPath -and (Test-Path -LiteralPath $global:PscpPath)) {
+        return $true
     }
-    return $true
+
+    $AppendLog.Invoke("[INFO] PuTTY tools not found (plink/pscp). Downloading for password-only mode...`r`n")
+
+    $arch = if ([IntPtr]::Size -eq 8) { "w64" } else { "w32" }
+    $baseUrl = "https://the.earth.li/~sgtatham/putty/latest/$arch"
+
+    $tempPath = [IO.Path]::GetTempPath()
+    $plinkTarget = Join-Path $tempPath "plink.exe"
+    $pscpTarget  = Join-Path $tempPath "pscp.exe"
+
+    try {
+        if (-not ($global:PlinkPath -and (Test-Path -LiteralPath $global:PlinkPath))) {
+            $plinkUrl = "$baseUrl/plink.exe"
+            (New-Object Net.WebClient).DownloadFile($plinkUrl, $plinkTarget)
+            if (-not (Test-Path -LiteralPath $plinkTarget)) {
+                $AppendLog.Invoke("[ERROR] plink.exe download completed but file not found at: $plinkTarget`r`n")
+                return $false
+            }
+            $global:PlinkPath = $plinkTarget
+            $AppendLog.Invoke("Downloaded plink.exe to $plinkTarget`r`n")
+        }
+
+        if (-not ($global:PscpPath -and (Test-Path -LiteralPath $global:PscpPath))) {
+            $pscpUrl = "$baseUrl/pscp.exe"
+            (New-Object Net.WebClient).DownloadFile($pscpUrl, $pscpTarget)
+            if (-not (Test-Path -LiteralPath $pscpTarget)) {
+                $AppendLog.Invoke("[ERROR] pscp.exe download completed but file not found at: $pscpTarget`r`n")
+                return $false
+            }
+            $global:PscpPath = $pscpTarget
+            $AppendLog.Invoke("Downloaded pscp.exe to $pscpTarget`r`n")
+        }
+
+        return $true
+    }
+    catch {
+        $AppendLog.Invoke("[ERROR] Failed to download PuTTY tools (plink/pscp).`r`n")
+        $AppendLog.Invoke("[ERROR] Exception: $($_.Exception.Message)`r`n")
+        return $false
+    }
 }
 
 function Reset-HostKeysForServer {
     param(
-        [string]$HostName,
-        [string]$Port
+        [Parameter(Mandatory=$true)][string]$HostName,
+        [Parameter(Mandatory=$true)][string]$Port
     )
 
     try {
         $regPath = "HKCU:\Software\SimonTatham\PuTTY\SshHostKeys"
         if (Test-Path $regPath) {
-            $regItem      = Get-Item $regPath
-            $targetPrefix = "*@${Port}:${HostName}"
-            $propsToRemove = $regItem.Property | Where-Object { $_ -like $targetPrefix }
+            $regItem       = Get-Item $regPath
+            $targetPrefix  = "*@${Port}:${HostName}"
+            $propsToRemove = @($regItem.Property | Where-Object { $_ -like $targetPrefix })
+
             foreach ($prop in $propsToRemove) {
                 Remove-ItemProperty -Path $regPath -Name $prop -ErrorAction SilentlyContinue
             }
+
             if ($propsToRemove.Count -gt 0) {
                 $AppendLog.Invoke("Reset PuTTY host-key cache entries for ${HostName}:$Port.`r`n")
             }
@@ -368,16 +2034,42 @@ function Reset-HostKeysForServer {
     }
 
     try {
-        $knownHostsPath = Join-Path (Join-Path $env:USERPROFILE ".ssh") "known_hosts"
-        if (Test-Path $knownHostsPath) {
+        $sshDir = Join-Path $env:USERPROFILE ".ssh"
+        if (-not (Test-Path $sshDir)) {
+            New-Item -ItemType Directory -Path $sshDir | Out-Null
+        }
+
+        $knownHostsPath = Join-Path $sshDir "known_hosts"
+        if (-not (Test-Path $knownHostsPath)) {
+            return
+        }
+
+        $sshKeygen = Join-Path $env:WINDIR "System32\OpenSSH\ssh-keygen.exe"
+        if (-not (Test-Path $sshKeygen)) {
+            try { $sshKeygen = (Get-Command ssh-keygen -ErrorAction Stop).Source } catch { $sshKeygen = $null }
+        }
+
+        if ($sshKeygen) {
+            $AppendLog.Invoke("Resetting OpenSSH known_hosts entries for ${HostName}:${Port} via ssh-keygen -R...`r`n")
+
+            try { & $sshKeygen -R "$HostName" -f "$knownHostsPath" 2>$null | Out-Null } catch {}
+            try { & $sshKeygen -R "[$HostName]:$Port" -f "$knownHostsPath" 2>$null | Out-Null } catch {}
+
+            $AppendLog.Invoke("Reset OpenSSH known_hosts entries for $HostName (port $Port).`r`n")
+        }
+        else {
+            $AppendLog.Invoke("[WARN] ssh-keygen not found; using regex cleanup (hashed known_hosts entries may remain).`r`n")
+
             $allLines    = Get-Content -Path $knownHostsPath
             $escapedHost = [regex]::Escape($HostName)
             $escapedPort = [regex]::Escape($Port)
-            $pattern1 = "^$escapedHost\s"
-            $pattern2 = "^\[$escapedHost\]:$escapedPort\s"
+            $pattern1 = "^$escapedHost[\s,]"
+            $pattern2 = "^\[$escapedHost\]:$escapedPort[\s,]"
+
             $filtered = $allLines | Where-Object {
                 $_ -notmatch $pattern1 -and $_ -notmatch $pattern2
             }
+
             if ($filtered.Count -ne $allLines.Count) {
                 $filtered | Set-Content -Path $knownHostsPath
                 $AppendLog.Invoke("Reset OpenSSH known_hosts entries for $HostName (port $Port).`r`n")
@@ -388,13 +2080,116 @@ function Reset-HostKeysForServer {
     }
 }
 
+function Try-CollectRemoteSnapshot {
+    param(
+        [Parameter(Mandatory=$true)][string]$SshExe,
+        [Parameter(Mandatory=$true)][string]$RemoteHost,
+        [Parameter(Mandatory=$true)][string]$Port,
+        [Parameter(Mandatory=$true)][string]$User,
+        [string]$KeyPath,
+        [string]$Reason = "timeout"
+    )
+
+    if ($script:__SnapshotInProgress) { return }
+    $script:__SnapshotInProgress = $true
+
+    try {
+        $sshDir = Join-Path $env:USERPROFILE ".ssh"
+        $knownHostsPath = Join-Path $sshDir "known_hosts"
+
+        $snapCmd = @"
+bash -lc '
+echo "=== SNAPSHOT_START reason=`$Reason ts=`$(date -Is) ==="
+echo "whoami=`$(whoami 2>/dev/null || true)"
+echo "id=`$(id 2>/dev/null || true)"
+echo "--- uname ---"
+uname -a 2>/dev/null || true
+echo "--- uptime ---"
+uptime 2>/dev/null || true
+echo "--- nsswitch ---"
+cat /etc/nsswitch.conf 2>/dev/null || true
+echo "--- resolv ---"
+( command -v resolvectl >/dev/null 2>&1 && resolvectl status 2>/dev/null ) || true
+cat /etc/resolv.conf 2>/dev/null || true
+echo "--- processes (top 25 by elapsed) ---"
+ps -eo pid,ppid,stat,etime,cmd --sort=-etime 2>/dev/null | head -n 25 || true
+echo "--- last auth/syslog (tail) ---"
+( test -f /var/log/auth.log && tail -n 40 /var/log/auth.log ) 2>/dev/null || true
+( test -f /var/log/syslog && tail -n 40 /var/log/syslog ) 2>/dev/null || true
+echo "--- journalctl (last 30) ---"
+journalctl -n 30 --no-pager 2>/dev/null || true
+echo "=== SNAPSHOT_END ==="
+'
+"@
+
+        $args = @(
+            "-o","BatchMode=yes",
+            "-o","NumberOfPasswordPrompts=0",
+            "-o","PreferredAuthentications=publickey",
+            "-o","PubkeyAuthentication=yes",
+            "-o","PasswordAuthentication=no",
+            "-o","KbdInteractiveAuthentication=no",
+            "-o","ChallengeResponseAuthentication=no",
+            "-o","StrictHostKeyChecking=accept-new",
+            "-o","ConnectTimeout=5",
+            "-o","ServerAliveInterval=2",
+            "-o","ServerAliveCountMax=1",
+            "-o","UserKnownHostsFile=$knownHostsPath",
+            "-o","GlobalKnownHostsFile=NUL",
+            "-p",$Port
+        )
+
+        if (-not [string]::IsNullOrWhiteSpace($KeyPath)) {
+            $args += @("-i",$KeyPath)
+        }
+
+        $args += "$User@$RemoteHost"
+        $snapCmd = $snapCmd.Replace('"','\"')
+        $args += "`"$snapCmd`""
+
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $SshExe
+        $psi.Arguments = ($args -join " ")
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError  = $true
+        $psi.CreateNoWindow = $true
+
+        $p = New-Object System.Diagnostics.Process
+        $p.StartInfo = $psi
+        $null = $p.Start()
+
+        if (-not $p.WaitForExit(8000)) {
+            try { $p.Kill() } catch {}
+            try { $p.WaitForExit(1000) | Out-Null } catch {}
+            try { $AppendLog.Invoke("[WARN] Snapshot ssh also timed out (8s).`r`n") } catch {}
+            return
+        }
+
+        $o = ""
+        $e = ""
+        try { $o = $p.StandardOutput.ReadToEnd() } catch {}
+        try { $e = $p.StandardError.ReadToEnd() } catch {}
+
+        if ($o) { try { $AppendLog.Invoke("__GUIONLY__" + $o + "`r`n") } catch {} }
+        if ($e) { try { $AppendLog.Invoke("__GUIONLY__" + "[SNAPSHOT_STDERR] " + $e + "`r`n") } catch {} }
+
+    } catch {
+        try { $AppendLog.Invoke("[WARN] Snapshot collection failed: $($_.Exception.Message)`r`n") } catch {}
+    } finally {
+        $script:__SnapshotInProgress = $false
+    }
+}
+
 function Run-SshCommand {
     param(
-        [string]$RemoteCommand,
-        [string]$RemoteHost,
-        [string]$Port,
-        [string]$User,
-        [string]$KeyPath
+        [Parameter(Mandatory=$true)][string]$RemoteCommand,
+        [Parameter(Mandatory=$true)][string]$RemoteHost,
+        [Parameter(Mandatory=$true)][string]$Port,
+        [Parameter(Mandatory=$true)][string]$User,
+        [string]$KeyPath,
+        [int]$TimeoutMs = 60000,
+        [string]$StdinText = $null
     )
 
     $sshExe = $null
@@ -411,65 +2206,108 @@ function Run-SshCommand {
         }
     }
 
-    $args = @(
-        "-o","BatchMode=yes",
-        "-o","StrictHostKeyChecking=accept-new",
-        "-p",$Port
-    )
-    if (-not [string]::IsNullOrWhiteSpace($KeyPath)) {
-        $args += @("-i",$KeyPath)
+    $sshDir = Join-Path $env:USERPROFILE ".ssh"
+    if (-not (Test-Path $sshDir)) {
+        New-Item -ItemType Directory -Path $sshDir | Out-Null
     }
+
+    $knownHostsPath = Join-Path $sshDir "known_hosts"
+
+    $args = @(
+        "-o", "BatchMode=yes",
+        "-o", "NumberOfPasswordPrompts=0",
+        "-o", "PreferredAuthentications=publickey",
+        "-o", "PubkeyAuthentication=yes",
+        "-o", "PasswordAuthentication=no",
+        "-o", "KbdInteractiveAuthentication=no",
+        "-o", "ChallengeResponseAuthentication=no",
+
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", "ConnectTimeout=10",
+        "-o", "ServerAliveInterval=10",
+        "-o", "ServerAliveCountMax=3",
+        "-o", "UserKnownHostsFile=$knownHostsPath",
+        "-o", "GlobalKnownHostsFile=NUL",
+        "-p", $Port
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($KeyPath)) {
+        $args += @("-i", $KeyPath)
+    }
+
     $args += "$User@$RemoteHost"
-    $args += $RemoteCommand
+
+    $rc = $RemoteCommand
+    if ($null -eq $rc) { $rc = "" }
+
+    $rc = $rc.Replace('"', '\"')
+    $args += "`"$rc`""
 
     $fullArgs = ($args -join ' ')
     if ($fullArgs -like "*chpasswd*" -or $fullArgs -like "*base64 -d*") {
         $AppendLog.Invoke("DEBUG: Running ssh ($sshExe) with password update command (details redacted).`r`n")
     } else {
-        $AppendLog.Invoke("DEBUG: Running ssh ($sshExe) with args: $fullArgs`r`n")
+        $AppendLog.Invoke("DEBUG: Running ssh command (arguments suppressed).`r`n")
     }
 
     try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $sshExe
-        $psi.Arguments = ($args -join " ")
-        $psi.UseShellExecute = $false
+        $psi.FileName               = $sshExe
+        $psi.Arguments              = ($args -join " ")
+        $psi.UseShellExecute        = $false
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError  = $true
+        $psi.RedirectStandardInput  = $true
         $psi.CreateNoWindow         = $true
 
         $proc = New-Object System.Diagnostics.Process
         $proc.StartInfo = $psi
 
-        $proc.Start() | Out-Null
+        $null = $proc.Start()
 
-        $timeoutMs = 15000
+        try {
+            if ($StdinText -ne $null) {
+                $txt = [string]$StdinText
+                if (-not $txt.EndsWith("`n")) { $txt += "`n" }
+                $proc.StandardInput.Write($txt)
+            }
+        } catch {}
+        try { $proc.StandardInput.Close() } catch {}
+
+        $outTask = $proc.StandardOutput.ReadToEndAsync()
+        $errTask = $proc.StandardError.ReadToEndAsync()
+
+        $timeoutMs = $TimeoutMs
+        if ($RemoteCommand -like "*chpasswd*" -or $RemoteCommand -like "*base64 -d*") {
+            $timeoutMs = [Math]::Max($timeoutMs, 180000)
+        }
+
         $finished = $proc.WaitForExit($timeoutMs)
-
         if (-not $finished) {
+            $AppendLog.Invoke("[ERROR] ssh command timed out after ${timeoutMs}ms. Killing ssh.exe...`r`n")
             try { $proc.Kill() } catch {}
-            $AppendLog.Invoke("[ERROR] ssh command timed out after ${timeoutMs}ms for: $($args -join ' ')`r`n")
+            try { $proc.WaitForExit(2000) | Out-Null } catch {}
+
+            try {
+                $AppendLog.Invoke("[WARN] Collecting remote snapshot after ssh timeout...`r`n")
+                Try-CollectRemoteSnapshot -SshExe $sshExe -RemoteHost $RemoteHost -Port $Port -User $User -KeyPath $KeyPath -Reason "ssh-timeout"
+            } catch {}
+
             return 1
         }
 
-        $out = $proc.StandardOutput.ReadToEnd()
-        $err = $proc.StandardError.ReadToEnd()
+        $stdout = ""
+        $stderr = ""
+        try { $null = [System.Threading.Tasks.Task]::WaitAll(@($outTask, $errTask), 2000) } catch {}
 
-        if ($out) {
-            foreach ($line in $out -split "`r?`n") {
-                if ($line -ne "") {
-                    if ($RemoteCommand -like "*echo OK*" -and $line -eq "OK") {
-                        continue
-                    }
-                    $AppendLog.Invoke("$line`r`n")
-                }
-            }
-        }
-        if ($err) {
-            foreach ($line in $err -split "`r?`n") {
+        try { $stdout = $outTask.Result } catch { $stdout = "" }
+        try { $stderr = $errTask.Result } catch { $stderr = "" }
+
+        if ($stderr) {
+            foreach ($line in $stderr -split "`r?`n") {
                 if ($line -ne "") {
                     if ($line -like "Warning: Permanently added*") {
-                        $AppendLog.Invoke("First-time connection to $RemoteHost confirmed. The server's identity has been saved for future connections.`r`n")
+                        $AppendLog.Invoke("First-time connection to $RemoteHost confirmed. Host key saved to known_hosts.`r`n")
                     } else {
                         $AppendLog.Invoke("[ERROR] $line`r`n")
                     }
@@ -477,98 +2315,755 @@ function Run-SshCommand {
             }
         }
 
-        $exitCode = $proc.ExitCode
-        if ($exitCode -ne 0) {
-            $AppendLog.Invoke("[ERROR] ssh exited with code $exitCode for command: $($args -join ' ')`r`n")
+        if ($stdout) {
+            foreach ($line in $stdout -split "`r?`n") {
+                if ($line -ne "") {
+                    if ($RemoteCommand -like "*echo OK*" -and $line -eq "OK") { continue }
+                    $AppendLog.Invoke("$line`r`n")
+                }
+            }
         }
-        return $exitCode
-    } catch {
+
+        try {
+            $script:LastSshExitCode  = $proc.ExitCode
+            $script:LastSshStdErr    = $stderr
+            $script:LastSshStdOut    = $stdout
+            $script:LastSshErrorLine = $null
+            if ($stderr) {
+                $lines = $stderr -split "`r?`n" | Where-Object { $_ -and $_.Trim() -ne "" }
+                if ($lines.Count -gt 0) { $script:LastSshErrorLine = $lines[-1].Trim() }
+            }
+        } catch {}
+
+        return $proc.ExitCode
+    }
+    catch {
         $AppendLog.Invoke("[FATAL] Exception while running ssh: $($_.Exception.Message)`r`n")
         return 1
     }
 }
 
+function Normalize-FullPath {
+    param([string]$p)
+    try {
+        if ([string]::IsNullOrWhiteSpace($p)) { return "" }
+        return ([IO.Path]::GetFullPath($p)).Trim()
+    } catch {
+        try { return ($p.Trim()) } catch { return "" }
+    }
+}
+
+function Convert-AgentCommentToPath {
+    param($CommentValue)
+
+    try {
+        if ($null -eq $CommentValue) { return "" }
+
+        if ($CommentValue -is [string]) { return $CommentValue }
+
+        if ($CommentValue -is [byte[]]) {
+            $s = [System.Text.Encoding]::UTF8.GetString($CommentValue)
+            return ($s -replace "`0","").Trim()
+        }
+
+        return ([string]$CommentValue).Trim()
+    } catch {
+        return ""
+    }
+}
+
 function Get-AgentRegistryKeyForPath {
-    param(
-        [string]$KeyPath
-    )
+    param([string]$KeyPath)
 
     $base = "HKCU:\Software\OpenSSH\Agent\Keys"
     if (-not (Test-Path $base)) { return $null }
+    if ([string]::IsNullOrWhiteSpace($KeyPath)) { return $null }
 
-    $normalized = [IO.Path]::GetFullPath($KeyPath)
+    $normalized = $null
+    try { $normalized = ([IO.Path]::GetFullPath($KeyPath)).Trim() } catch { $normalized = $KeyPath.Trim() }
+    if ([string]::IsNullOrWhiteSpace($normalized)) { return $null }
 
     foreach ($sub in Get-ChildItem $base -ErrorAction SilentlyContinue) {
         try {
-            $props   = Get-ItemProperty -Path $sub.PSPath -ErrorAction SilentlyContinue
-            $comment = $props.comment
-            if ($comment) {
-                $commentFull = [IO.Path]::GetFullPath($comment)
-                if ($commentFull -ieq $normalized) {
-                    return $sub.PSPath
-                }
+            $props = Get-ItemProperty -Path $sub.PSPath -ErrorAction SilentlyContinue
+            $c = Convert-AgentCommentToPath $props.comment
+            if ([string]::IsNullOrWhiteSpace($c)) { continue }
+
+            $cFull = $null
+            try { $cFull = ([IO.Path]::GetFullPath($c)).Trim() } catch { $cFull = $c.Trim() }
+
+            if ($cFull -and ($cFull -ieq $normalized)) {
+                return $sub.PSPath
             }
-        } catch {
-            # ignore broken entries
-        }
+        } catch {}
     }
 
     return $null
 }
 
-function Mark-AgentKeyOwned {
+function Get-ServerToolkitAgentSessionDir {
+    try {
+        if ($script:SshAgentSessionDir -and (Test-Path -LiteralPath $script:SshAgentSessionDir)) {
+            return $script:SshAgentSessionDir
+        }
+    } catch {}
+    try {
+        if ($env:SERVER_TOOLKIT_SSHAGENT_SESSIONDIR -and (Test-Path -LiteralPath $env:SERVER_TOOLKIT_SSHAGENT_SESSIONDIR)) {
+            return $env:SERVER_TOOLKIT_SSHAGENT_SESSIONDIR
+        }
+    } catch {}
+    return $null
+}
+
+function Get-ServerToolkitOwnedPubKeysFile {
+    try {
+        $base = Join-Path $env:LOCALAPPDATA "ServerToolkit"
+        if (-not (Test-Path -LiteralPath $base)) {
+            New-Item -ItemType Directory -Path $base -Force | Out-Null
+        }
+        return (Join-Path $base "owned_agent_pubkeys.txt")
+    } catch {
+        try { return (Join-Path $env:TEMP "ServerToolkit-owned_agent_pubkeys.txt") } catch {}
+    }
+    return $null
+}
+
+function Get-AgentPubKeyLines {
+    $sshAddExe = $null
+    $win = Join-Path $env:WINDIR "System32\OpenSSH\ssh-add.exe"
+    if (Test-Path -LiteralPath $win) { $sshAddExe = $win } else {
+        try { $sshAddExe = (Get-Command ssh-add -ErrorAction Stop).Source } catch { return @() }
+    }
+
+    try {
+        $out = & $sshAddExe -L 2>&1
+        if (-not $out) { return @() }
+
+        $lines = @()
+        foreach ($ln in ($out -split "`r?`n")) {
+            $t = ($ln | ForEach-Object { $_.Trim() })
+            if ([string]::IsNullOrWhiteSpace($t)) { continue }
+            if ($t -match '^(ssh-(rsa|ed25519)|ecdsa-sha2-nistp\d+)\s+') {
+                $lines += $t
+            }
+        }
+        return $lines
+    } catch {
+        return @()
+    }
+}
+
+function Write-OwnedAgentPubKeys {
+    param([string[]]$PubKeyLines)
+
+    if (-not $PubKeyLines -or $PubKeyLines.Count -eq 0) { return }
+
+    $f = Get-ServerToolkitOwnedPubKeysFile
+    if (-not $f) { return }
+
+    try {
+        $dir = Split-Path -Parent $f
+        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+
+        $existing = @()
+        if (Test-Path -LiteralPath $f) {
+            try { $existing = Get-Content -LiteralPath $f -ErrorAction SilentlyContinue } catch { $existing = @() }
+        }
+
+        $added = 0
+        foreach ($ln in $PubKeyLines) {
+            if ([string]::IsNullOrWhiteSpace($ln)) { continue }
+            if ($existing -notcontains $ln) {
+                Add-Content -LiteralPath $f -Value $ln -Encoding ASCII
+                $added++
+            }
+        }
+
+        try { $AppendLog.Invoke("[INFO] OWNED_KEYS: wrote $added new key(s) to: $f`r`n") } catch {}
+    } catch {
+        try { $AppendLog.Invoke("[WARN] OWNED_KEYS: failed writing owned key file: $($_.Exception.Message)`r`n") } catch {}
+    }
+}
+
+function Read-OwnedAgentPubKeys {
+    $f = Get-ServerToolkitOwnedPubKeysFile
+    if (-not $f -or -not (Test-Path -LiteralPath $f)) { return @() }
+
+    try {
+        return (Get-Content -LiteralPath $f -ErrorAction SilentlyContinue | Where-Object { $_ -and $_.Trim() })
+    } catch {
+        return @()
+    }
+}
+
+function Remove-OwnedAgentPubKeyLine {
     param(
-        [string]$KeyPath
+        [Parameter(Mandatory=$true)][string]$PubKeyLine
     )
 
-    $regKey = Get-AgentRegistryKeyForPath -KeyPath $KeyPath
-    if ($regKey) {
-        try {
-            Set-ItemProperty -Path $regKey -Name "ServerToolkitOwned" -Value 1 -Type DWord
-            $AppendLog.Invoke("Marked ssh-agent key as owned by GUI: $KeyPath`r`n")
-        } catch {
-            $AppendLog.Invoke("[WARN] Failed to mark agent key as owned: $($_.Exception.Message)`r`n")
+    $sshAddExe = $null
+    $win = Join-Path $env:WINDIR "System32\OpenSSH\ssh-add.exe"
+    if (Test-Path -LiteralPath $win) { $sshAddExe = $win } else {
+        try { $sshAddExe = (Get-Command ssh-add -ErrorAction Stop).Source } catch { $sshAddExe = $null }
+    }
+    if (-not $sshAddExe) { return $false }
+
+    $tmpPub = Join-Path $env:TEMP ("server-toolkit-agent-remove-" + [guid]::NewGuid().ToString("N") + ".pub")
+    try {
+        Set-Content -LiteralPath $tmpPub -Value $PubKeyLine -Encoding ASCII -Force
+        $out = & $sshAddExe -d $tmpPub 2>&1
+        if ($out) {
+            foreach ($ln in ($out -split "`r?`n")) {
+                if ($ln) { try { $AppendLog.Invoke("[INFO] CLEANUP: ssh-add -d: $ln`r`n") } catch {} }
+            }
         }
-    } else {
-        $AppendLog.Invoke("DEBUG: ssh-agent registry entry not found for key (cannot mark as GUI-owned): $KeyPath`r`n")
+        return $true
+    } catch {
+        return $false
+    } finally {
+        try { Remove-Item -LiteralPath $tmpPub -Force -ErrorAction SilentlyContinue } catch {}
     }
 }
 
 function Cleanup-AgentOwnedKeys {
-    $base = "HKCU:\Software\OpenSSH\Agent\Keys"
-    if (-not (Test-Path $base)) { return }
+
+    try { $AppendLog.Invoke("[INFO] CLEANUP: Starting ssh-agent key cleanup (pubkey-file method)...`r`n") } catch {}
 
     $sshAddExe = $null
-    $winSshAdd = Join-Path $env:WINDIR "System32\OpenSSH\ssh-add.exe"
-    if (Test-Path $winSshAdd) {
-        $sshAddExe = $winSshAdd
-    } else {
+    $win = Join-Path $env:WINDIR "System32\OpenSSH\ssh-add.exe"
+    if (Test-Path -LiteralPath $win) { $sshAddExe = $win } else {
+        try { $sshAddExe = (Get-Command ssh-add -ErrorAction Stop).Source } catch { $sshAddExe = $null }
+    }
+
+    if (-not $sshAddExe) {
+        try { $AppendLog.Invoke("[WARN] CLEANUP: ssh-add not found. Skipping agent cleanup.`r`n") } catch {}
+        return
+    }
+
+    $fOwned = Get-ServerToolkitOwnedPubKeysFile
+    try { $AppendLog.Invoke("[INFO] CLEANUP: reading owned key file: $fOwned`r`n") } catch {}
+    $owned = Read-OwnedAgentPubKeys
+
+    if (-not $owned -or $owned.Count -eq 0) {
+        try { $AppendLog.Invoke("[INFO] CLEANUP: No owned pubkeys recorded. Nothing to remove.`r`n") } catch {}
         try {
-            $sshAddCmd = Get-Command ssh-add -ErrorAction Stop
-            $sshAddExe = $sshAddCmd.Source
-        } catch {
-            $AppendLog.Invoke("[WARN] ssh-add not found. Cannot clean up agent keys.`r`n")
-            return
+            $f = Get-ServerToolkitOwnedPubKeysFile
+            if ($f -and (Test-Path -LiteralPath $f)) {
+                Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue
+                try { $AppendLog.Invoke("[INFO] CLEANUP: removed stale owned key file: $f`r`n") } catch {}
+            }
+        } catch {}
+        return
+    }
+
+    $removed = 0
+    $failed  = 0
+
+    foreach ($pubLine in $owned) {
+        if ([string]::IsNullOrWhiteSpace($pubLine)) { continue }
+
+        $ok = $false
+        try { $ok = Remove-OwnedAgentPubKeyLine -PubKeyLine $pubLine } catch { $ok = $false }
+
+        if ($ok) {
+            $removed++
+        } else {
+            $failed++
+            try { $AppendLog.Invoke("[WARN] CLEANUP: Failed removing one key via pubfile.`r`n") } catch {}
         }
     }
 
-    foreach ($sub in Get-ChildItem $base -ErrorAction SilentlyContinue) {
+    try { $AppendLog.Invoke("[INFO] CLEANUP: Completed. removed=$removed failed=$failed`r`n") } catch {}
+
+    try {
+        $f = Get-ServerToolkitOwnedPubKeysFile
+        if ($f -and (Test-Path -LiteralPath $f)) {
+            Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue
+        }
+    } catch {}
+}
+
+function Start-SshAddAutoResumeWaiter {
+    param(
+        [Parameter(Mandatory=$true)][System.Diagnostics.Process]$Proc,
+        [Parameter(Mandatory=$true)][string]$KeyPath
+    )
+
+    if ($script:SshAddAutoResumeRunning) { return }
+    $script:SshAddAutoResumeRunning = $true
+    $script:SshAddUnlockProc = $Proc
+
+    [System.Threading.Tasks.Task]::Run([Action]{
         try {
-            $props = Get-ItemProperty -Path $sub.PSPath -ErrorAction SilentlyContinue
-            if ($props.ServerToolkitOwned -eq 1) {
-                $comment = $props.comment
-                if ($comment) {
-                    $AppendLog.Invoke("Removing GUI-added key from ssh-agent: $comment`r`n")
-                    try { & $sshAddExe -d "$comment" | Out-Null } catch {}
+            try { $Proc.WaitForExit() } catch {}
+            Start-Sleep -Milliseconds 300
+
+            $loaded = $false
+            try {
+                $sshAddExe = Join-Path $env:WINDIR "System32\OpenSSH\ssh-add.exe"
+                if (-not (Test-Path $sshAddExe)) {
+                    try { $sshAddExe = (Get-Command ssh-add -ErrorAction Stop).Source } catch { $sshAddExe = $null }
                 }
+
+                if ($sshAddExe) {
+                    $psi = New-Object System.Diagnostics.ProcessStartInfo
+                    $psi.FileName = $sshAddExe
+                    $psi.Arguments = "-L"
+                    $psi.UseShellExecute = $false
+                    $psi.RedirectStandardOutput = $true
+                    $psi.RedirectStandardError  = $true
+                    $psi.CreateNoWindow         = $true
+
+                    $p2 = New-Object System.Diagnostics.Process
+                    $p2.StartInfo = $psi
+                    $p2.Start() | Out-Null
+                    if ($p2.WaitForExit(3000)) {
+                        $out = $p2.StandardOutput.ReadToEnd()
+                        if ($p2.ExitCode -eq 0 -and $out) {
+                            $esc = [regex]::Escape($KeyPath)
+                            foreach ($ln in ($out -split "`r?`n")) {
+                                if ($ln -match $esc) { $loaded = $true; break }
+                            }
+                        }
+                    } else {
+                        try { $p2.Kill() } catch {}
+                    }
+                }
+            } catch { $loaded = $false }
+
+            if (-not $loaded) {
+                try { $script:AppendLog.Invoke("[WARN] ssh-add window closed, but the key still wasn't detected as loaded. Please try again.`r`n") } catch {}
+                return
+            }
+
+            try {
+                $script:UiDispatcher.BeginInvoke([Action]{
+                    try {
+                        Start-KeyCleanupWatchdog
+                    } catch {}
+                }) | Out-Null
+            } catch {}
+
+            try { $script:AppendLog.Invoke("[INFO] SSH key unlocked and detected. Continuing automatically...`r`n") } catch {}
+
+            for ($i=0; $i -lt 200; $i++) {
+                $okToClick = $false
                 try {
-                    Remove-ItemProperty -Path $sub.PSPath -Name "ServerToolkitOwned" -ErrorAction SilentlyContinue
-                } catch {}
+                    $okToClick = $script:UiDispatcher.Invoke([Func[bool]]{
+                        try { return ($StartButton -and $StartButton.IsEnabled -and (-not $script:IsBackgroundRunning)) } catch { return $false }
+                    })
+                } catch { $okToClick = $false }
+
+                if ($okToClick) {
+                    try {
+                        $script:UiDispatcher.BeginInvoke([Action]{
+                            try {
+                                $StartButton.RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+                            } catch {}
+                        }) | Out-Null
+                    } catch {}
+                    break
+                }
+
+                Start-Sleep -Milliseconds 150
+            }
+        }
+        finally {
+            $script:SshAddAutoResumeRunning = $false
+            $script:SshAddUnlockProc = $null
+        }
+    }) | Out-Null
+}
+
+function Start-KeyCleanupWatchdog {
+    if ($script:KeyCleanupWatchdogProc -and -not $script:KeyCleanupWatchdogProc.HasExited) { return }
+
+    $parentPid = $PID
+    $log = $global:ServerToolkitLogPath
+
+    $payload = @"
+`$ErrorActionPreference='SilentlyContinue'
+`$parentPid=$parentPid
+`$logPath='$log'
+
+function WL([string]`$m){
+  try{
+    if(`$logPath){
+      Add-Content -Path `$logPath -Value ((Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") + " [INFO] " + `$m) -Encoding UTF8 -ErrorAction SilentlyContinue
+    }
+  }catch{}
+}
+
+# Wait for parent to exit (crash-safe)
+while(`$true){
+  try{
+    `$p=Get-Process -Id `$parentPid -ErrorAction SilentlyContinue
+    if(-not `$p){ break }
+  }catch{ break }
+  Start-Sleep -Milliseconds 500
+}
+
+WL "KEY_CLEANUP_WATCHDOG_TRIGGERED parentPid=`$parentPid"
+
+# Locate ssh-add
+`$sshAddExe=Join-Path `$env:WINDIR "System32\OpenSSH\ssh-add.exe"
+if(-not (Test-Path `$sshAddExe)){
+  try{ `$sshAddExe=(Get-Command ssh-add -ErrorAction Stop).Source }catch{ `$sshAddExe=$null }
+}
+if(-not `$sshAddExe){
+  WL "KEY_CLEANUP_WATCHDOG_SKIP ssh-add not found"
+  exit 0
+}
+
+# Session dir from env
+`$sess = `$env:SERVER_TOOLKIT_SSHAGENT_SESSIONDIR
+if(-not `$sess -or -not (Test-Path -LiteralPath `$sess)){
+  WL "KEY_CLEANUP_WATCHDOG_SKIP no session dir env/dir missing"
+  exit 0
+}
+
+`$ownedFile = Join-Path `$sess "owned_agent_pubkeys.txt"
+if(-not (Test-Path -LiteralPath `$ownedFile)){
+  WL "KEY_CLEANUP_WATCHDOG_NONE no owned_agent_pubkeys.txt"
+  exit 0
+}
+
+`$lines = @()
+try{ `$lines = Get-Content -LiteralPath `$ownedFile -ErrorAction SilentlyContinue }catch{ `$lines=@() }
+
+`$removed=0
+`$failed=0
+
+foreach(`$ln in `$lines){
+  try{
+    `$t = ([string]`$ln).Trim()
+    if(-not `$t){ continue }
+
+    `$tmpPub = Join-Path `$env:TEMP ("server-toolkit-agent-remove-" + [guid]::NewGuid().ToString("N") + ".pub")
+    try{
+      Set-Content -LiteralPath `$tmpPub -Value `$t -Encoding ASCII -Force
+      `$out = & `$sshAddExe -d `$tmpPub 2>&1
+      if(`$out){ WL ("WATCHDOG ssh-add -d: " + (`$out -join " | ")) }
+      `$removed++
+    }catch{
+      `$failed++
+      WL ("WATCHDOG remove failed: " + `$_.Exception.Message)
+    }finally{
+      try{ Remove-Item -LiteralPath `$tmpPub -Force -ErrorAction SilentlyContinue }catch{}
+    }
+  }catch{
+    `$failed++
+  }
+}
+
+try{ Remove-Item -LiteralPath `$ownedFile -Force -ErrorAction SilentlyContinue }catch{}
+
+WL ("KEY_CLEANUP_WATCHDOG_DONE removed=" + `$removed + " failed=" + `$failed)
+"@
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($payload))
+
+    try {
+        $p = Start-Process powershell.exe -WindowStyle Hidden -PassThru `
+            -ArgumentList "-NoProfile -NoLogo -ExecutionPolicy Bypass -EncodedCommand $encoded"
+        $script:KeyCleanupWatchdogProc = $p
+        $script:AppendLog.Invoke("[INFO] Key cleanup watchdog started (PID=$($p.Id)).`r`n")
+    } catch {
+        $script:AppendLog.Invoke("[WARN] Failed to start key cleanup watchdog: $($_.Exception.Message)`r`n")
+    }
+}
+
+function Start-SshAgentSessionHelper {
+    param(
+        [Parameter(Mandatory=$true)][string]$PrevStartType,
+        [Parameter(Mandatory=$true)][string]$PrevStatus,
+        [int]$ParentPid = $PID,
+        [int]$FailsafeMinutes = 30,
+        [string]$LogPath = $global:ServerToolkitLogPath
+    )
+
+    $dir = Join-Path ([IO.Path]::GetTempPath()) ("server-toolkit-sshagent-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+
+    $ready = Join-Path $dir "ready.txt"
+    $close = Join-Path $dir "close.txt"
+
+    $script:SshAgentSessionDir = $dir
+    $script:SshAgentReadyFile  = $ready
+    $script:SshAgentCloseFile  = $close
+
+    if ($null -eq $LogPath) { $LogPath = "" }
+    $LogPath = $LogPath.Trim()
+
+    $helper = @"
+`$ErrorActionPreference = 'SilentlyContinue'
+
+`$prevStartType = '$PrevStartType'
+`$prevStatus    = '$PrevStatus'
+`$readyFile     = '$ready'
+`$closeFile     = '$close'
+`$parentPid     = $ParentPid
+`$failsafeSec   = [int]($FailsafeMinutes * 60)
+`$logPath       = '$LogPath'
+
+function Write-HelperLog([string]`$msg) {
+    try {
+        if (-not [string]::IsNullOrWhiteSpace(`$logPath)) {
+            `$ts = (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff")
+            Add-Content -Path `$logPath -Value ("`$ts [INFO] `$msg") -Encoding UTF8 -ErrorAction SilentlyContinue
+        }
+    } catch {}
+}
+
+function Get-SshAddPath {
+    try {
+        `$p = Join-Path `$env:WINDIR "System32\OpenSSH\ssh-add.exe"
+        if (Test-Path -LiteralPath `$p) { return `$p }
+    } catch {}
+    try {
+        return (Get-Command ssh-add -ErrorAction Stop).Source
+    } catch {
+        return `$null
+    }
+}
+
+function Convert-CommentToPath([object]`$commentValue) {
+    try {
+        if (`$null -eq `$commentValue) { return "" }
+        if (`$commentValue -is [string]) { return (`$commentValue).Trim() }
+        if (`$commentValue -is [byte[]]) {
+            `$s = [System.Text.Encoding]::UTF8.GetString(`$commentValue)
+            return (`$s -replace "`0","").Trim()
+        }
+        return ([string]`$commentValue).Trim()
+    } catch {
+        return ""
+    }
+}
+
+function Cleanup-ServerToolkitOwnedAgentKeys {
+    try {
+        Write-HelperLog "HELPER_CLEANUP_BEGIN scanning ServerToolkitOwned agent keys..."
+    } catch {}
+
+    `$sshAddExe = Get-SshAddPath
+    if (-not `$sshAddExe) {
+        try { Write-HelperLog "HELPER_CLEANUP_SKIP ssh-add not found." } catch {}
+        return
+    }
+
+    `$base = "HKCU:\Software\OpenSSH\Agent\Keys"
+    if (-not (Test-Path -LiteralPath `$base)) {
+        try { Write-HelperLog "HELPER_CLEANUP_NONE no HKCU:\Software\OpenSSH\Agent\Keys present." } catch {}
+        return
+    }
+
+    `$removed = 0
+    `$seen    = 0
+
+    foreach (`$sub in Get-ChildItem -LiteralPath `$base -ErrorAction SilentlyContinue) {
+        try {
+            `$props = Get-ItemProperty -Path `$sub.PSPath -ErrorAction SilentlyContinue
+            if (`$props.ServerToolkitOwned -ne 1) { continue }
+
+            `$seen++
+            `$commentPath = Convert-CommentToPath `$props.comment
+
+            if (-not [string]::IsNullOrWhiteSpace(`$commentPath)) {
+                try { & `$sshAddExe -d "`$commentPath" 1>`$null 2>`$null } catch {}
+            }
+
+            # Remove the agent registry entry (this is what actually “forgets” it)
+            try { Remove-Item -LiteralPath `$sub.PSPath -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+
+            `$removed++
+            try { Write-HelperLog ("HELPER_CLEANUP_REMOVED commentPath=" + `$commentPath) } catch {}
+        } catch {}
+    }
+
+    try {
+        Write-HelperLog ("HELPER_CLEANUP_DONE seenOwned=" + `$seen + " removed=" + `$removed)
+    } catch {}
+}
+
+Write-HelperLog "HELPER_STARTED ssh-agent prevStartType=`$prevStartType prevStatus=`$prevStatus parentPid=`$parentPid failsafeSec=`$failsafeSec"
+
+`$start = `$null
+
+try {
+    # IMPORTANT: If ssh-agent was Disabled, it cannot be started.
+    # Set to MANUAL for this session (not Automatic), so it won't auto-restart on reboot.
+    try { Set-Service ssh-agent -StartupType Manual } catch {}
+    try { Start-Service ssh-agent } catch {}
+
+    # Confirm running (best-effort)
+    try {
+        `$svc = Get-Service ssh-agent -ErrorAction SilentlyContinue
+        Write-HelperLog ("HELPER_AGENT_STATE status=" + `$svc.Status + " startType=" + `$svc.StartType)
+    } catch {}
+
+    try { 'READY' | Out-File -FilePath `$readyFile -Encoding ASCII -Force } catch {}
+    `$start = [DateTime]::UtcNow
+    Write-HelperLog "HELPER_READY ssh-agent enabled/running (ready file written)"
+
+    while (`$true) {
+
+        try {
+            if (`$null -eq `$start) { `$start = [DateTime]::UtcNow }
+            `$elapsed = ([DateTime]::UtcNow - `$start).TotalSeconds
+            if (`$elapsed -ge `$failsafeSec) {
+                Write-HelperLog ("HELPER_TIMEOUT elapsedSec=" + [int]`$elapsed + " >= failsafeSec=" + `$failsafeSec)
+                break
+            }
+        } catch {}
+
+        try {
+            if (Test-Path -LiteralPath `$closeFile) {
+                Write-HelperLog "HELPER_CLOSE_SIGNAL file detected"
+                break
+            }
+        } catch {}
+
+        try {
+            `$p = Get-Process -Id `$parentPid -ErrorAction SilentlyContinue
+            if (-not `$p) {
+                Write-HelperLog ("HELPER_PARENT_GONE parentPid=" + `$parentPid + " (GUI likely closed/crashed)")
+                break
             }
         } catch {
-            # ignore broken entries
+            Write-HelperLog "HELPER_PARENT_CHECK_ERROR (treating as closed)"
+            break
         }
+
+        Start-Sleep -Milliseconds 500
     }
+
+} finally {
+
+    # Always try to cleanup keys FIRST (so cleanup still works even if we revert/stop agent)
+    try {
+        Cleanup-ServerToolkitOwnedAgentKeys
+    } catch {
+        try { Write-HelperLog ("HELPER_CLEANUP_FAILED " + `$_.Exception.Message) } catch {}
+    }
+
+    Write-HelperLog "HELPER_REVERTING restoring ssh-agent to prevStartType=`$prevStartType prevStatus=`$prevStatus"
+
+    try { Set-Service ssh-agent -StartupType `$prevStartType } catch {}
+
+    if (`$prevStatus -eq 'Running') {
+        try { Start-Service ssh-agent -ErrorAction SilentlyContinue } catch {}
+    } else {
+        try { Stop-Service ssh-agent -ErrorAction SilentlyContinue } catch {}
+    }
+
+    try {
+        `$svc2 = Get-Service ssh-agent -ErrorAction SilentlyContinue
+        Write-HelperLog ("HELPER_REVERTED ssh-agent restored status=" + `$svc2.Status + " startType=" + `$svc2.StartType)
+    } catch {
+        Write-HelperLog "HELPER_REVERTED ssh-agent restored (state unknown)"
+    }
+}
+"@
+
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($helper))
+
+    $p = Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -PassThru `
+        -ArgumentList "-NoProfile -NoLogo -ExecutionPolicy Bypass -EncodedCommand $encoded"
+
+    $script:SshAgentHelperProc = $p
+    return $true
+}
+
+function Ensure-SshAgentSessionPreStart {
+    param(
+        [string]$KeyPath,
+        [string]$Passphrase
+    )
+
+    if ([string]::IsNullOrWhiteSpace($KeyPath)) { return $true }
+    if ([string]::IsNullOrWhiteSpace($Passphrase)) { return $true }
+    $svc = $null
+    try { $svc = Get-Service ssh-agent -ErrorAction SilentlyContinue } catch { $svc = $null }
+    if (-not $svc) {
+        $script:AppendLog.Invoke("[WARN] ssh-agent service not found on this system. Skipping agent enable step.`r`n")
+        return $true
+    }
+
+    if (-not $script:SshAgentTouched) {
+        $script:SshAgentPrevStartType = $svc.StartType.ToString()
+        $script:SshAgentPrevStatus    = $svc.Status.ToString()
+    }
+
+    $needsEnable = ($svc.StartType -eq 'Disabled' -or $svc.Status -ne 'Running')
+
+    if (-not $needsEnable) { return $true }
+
+    $msg = @()
+    $msg += "This tool needs to temporarily turn on Windows 'ssh-agent' so it can unlock your SSH key."
+    $msg += ""
+    $msg += "In plain terms: it stores your key securely for this session so the toolkit can connect as needed."
+    $msg += ""
+    $msg += "When you close the Server Toolkit, it will automatically restore ssh-agent back to how it was before."
+    $msg += ""
+    $msg += "Allow enabling ssh-agent now?"
+
+    $res = [System.Windows.MessageBox]::Show(
+        $MainWindow,
+        ($msg -join "`r`n"),
+        "Enable SSH Key Helper?",
+        [System.Windows.MessageBoxButton]::YesNo,
+        [System.Windows.MessageBoxImage]::Question
+    )
+
+    if ($res -ne [System.Windows.MessageBoxResult]::Yes) {
+        $script:AppendLog.Invoke("[ERROR] User declined enabling ssh-agent. Cannot continue with encrypted key automation.`r`n")
+        return $false
+    }
+
+    $script:AppendLog.Invoke("[INFO] Enabling ssh-agent (requires UAC) for this session...`r`n")
+
+    $ok = Start-SshAgentSessionHelper `
+        -PrevStartType $script:SshAgentPrevStartType `
+        -PrevStatus $script:SshAgentPrevStatus `
+        -ParentPid $PID `
+        -FailsafeMinutes 30 `
+        -LogPath $global:ServerToolkitLogPath
+
+    if (-not $ok) {
+        $script:AppendLog.Invoke("[FATAL] Failed to start elevated ssh-agent helper.`r`n")
+        return $false
+    }
+
+    $waitMs = 0
+    while ($waitMs -lt 30000) {
+        if (Test-Path -LiteralPath $script:SshAgentReadyFile) {
+            $script:SshAgentTouched = $true
+
+            $hp = $null
+            try { if ($script:SshAgentHelperProc) { $hp = $script:SshAgentHelperProc.Id } } catch { $hp = $null }
+
+            if ($hp) {
+                $script:AppendLog.Invoke("[INFO] ssh-agent enabled and running (helper PID=$hp).`r`n")
+            } else {
+                $script:AppendLog.Invoke("[INFO] ssh-agent enabled and running.`r`n")
+            }
+
+            return $true
+        }
+        Start-Sleep -Milliseconds 250
+        $waitMs += 250
+    }
+
+    $script:AppendLog.Invoke("[FATAL] Timed out waiting for ssh-agent helper to start.`r`n")
+    return $false
+}
+
+function Signal-SshAgentSessionEnd {
+    try {
+        if ($script:SshAgentTouched -and $script:SshAgentCloseFile) {
+            try { 'CLOSE' | Out-File -FilePath $script:SshAgentCloseFile -Encoding ASCII -Force } catch {}
+        }
+    } catch {}
 }
 
 function Ensure-SshAgentWithKey {
@@ -577,152 +3072,1761 @@ function Ensure-SshAgentWithKey {
         [string]$Passphrase
     )
 
-    if ([string]::IsNullOrWhiteSpace($KeyPath)) {
-        return $true
-    }
+    if ([string]::IsNullOrWhiteSpace($KeyPath)) { return $true }
 
     $agentService = $null
-    try {
-        $agentService = Get-Service ssh-agent -ErrorAction SilentlyContinue
-    } catch {
-        $agentService = $null
-    }
-
+    try { $agentService = Get-Service ssh-agent -ErrorAction SilentlyContinue } catch { $agentService = $null }
     if (-not $agentService) {
-        $AppendLog.Invoke("[WARN] ssh-agent service not found on this system. Skipping agent integration.`r`n")
+        try { $AppendLog.Invoke("[WARN] ssh-agent service not found on this system. Skipping agent integration.`r`n") } catch {}
         return $true
-    }
-
-    if ($agentService.StartType -eq 'Disabled') {
-        try {
-            Set-Service ssh-agent -StartupType Automatic -ErrorAction Stop
-            $AppendLog.Invoke("Set ssh-agent StartupType to Automatic.`r`n")
-        } catch {
-            $AppendLog.Invoke("[WARN] Failed to change ssh-agent StartupType: $($_.Exception.Message)`r`n")
-        }
-    }
-
-    if ($agentService.Status -ne 'Running') {
-        try {
-            Start-Service ssh-agent -ErrorAction Stop
-            $AppendLog.Invoke("Started ssh-agent service.`r`n")
-        } catch {
-            $AppendLog.Invoke("[WARN] Could not start ssh-agent service: $($_.Exception.Message)`r`n")
-            return $true
-        }
-    } else {
-        $AppendLog.Invoke("ssh-agent service is already running.`r`n")
     }
 
     $sshAddExe = $null
     $winSshAdd = Join-Path $env:WINDIR "System32\OpenSSH\ssh-add.exe"
-    if (Test-Path $winSshAdd) {
+    if (Test-Path -LiteralPath $winSshAdd) {
         $sshAddExe = $winSshAdd
     } else {
-        try {
-            $sshAddCmd = Get-Command ssh-add -ErrorAction Stop
-            $sshAddExe = $sshAddCmd.Source
-        } catch {
-            $AppendLog.Invoke("[WARN] ssh-add not found on PATH. Skipping automatic agent checks.`r`n")
-            return $true
-        }
+        try { $sshAddExe = (Get-Command ssh-add -ErrorAction Stop).Source } catch { $sshAddExe = $null }
     }
 
-    $identitiesLoaded = $false
+    if (-not $sshAddExe) {
+        try { $AppendLog.Invoke("[WARN] ssh-add not found. Cannot unlock key automatically.`r`n") } catch {}
+        return $true
+    }
+
     try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $sshAddExe
-        $psi.Arguments = "-L"
+        $psi.Arguments = "-l"
         $psi.UseShellExecute = $false
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError  = $true
         $psi.CreateNoWindow         = $true
 
-        $proc = New-Object System.Diagnostics.Process
-        $proc.StartInfo = $psi
-        $proc.Start() | Out-Null
+        $p = New-Object System.Diagnostics.Process
+        $p.StartInfo = $psi
+        $p.Start() | Out-Null
 
-        if ($proc.WaitForExit(3000)) {
-            $out = $proc.StandardOutput.ReadToEnd()
-            $err = $proc.StandardError.ReadToEnd()
+        if ($p.WaitForExit(3000)) {
+            $out = ""
+            try { $out = $p.StandardOutput.ReadToEnd() } catch {}
 
-            if ($proc.ExitCode -eq 0 -and $out) {
-                $keyPathEscaped = [regex]::Escape($KeyPath)
-                foreach ($line in $out -split "`r?`n") {
-                    if ($line -match $keyPathEscaped) {
-                        $identitiesLoaded = $true
-                        break
+            if ($p.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($out)) {
+                foreach ($ln in ($out -split "`r?`n")) {
+                    if (-not $ln) { continue }
+                    if ($ln -like "*$KeyPath*") {
+                        try { $AppendLog.Invoke("ssh-agent already has this key loaded: $KeyPath`r`n") } catch {}
+                        return $true
                     }
                 }
-            } elseif ($err) {
-                $AppendLog.Invoke("[WARN] ssh-add -L stderr: $err`r`n")
             }
         } else {
-            try { $proc.Kill() } catch {}
-            $AppendLog.Invoke("[WARN] ssh-add -L did not finish within 3000ms. Assuming no identities.`r`n")
+            try { $p.Kill() } catch {}
         }
-    } catch {
-        $AppendLog.Invoke("[WARN] Failed to query ssh-agent identities: $($_.Exception.Message)`r`n")
-    }
-
-    if ($identitiesLoaded) {
-        $AppendLog.Invoke("ssh-agent already has this key loaded: $KeyPath`r`n")
-        if ($script:agentKeyAddedThisSession) {
-            Mark-AgentKeyOwned -KeyPath $KeyPath
-            $script:agentKeyAddedThisSession = $false
-        }
-        return $true
-    }
+    } catch {}
 
     if ([string]::IsNullOrWhiteSpace($Passphrase)) {
-        $AppendLog.Invoke("No key passphrase provided and ssh-agent has no identity for this key.`r`n")
-        $AppendLog.Invoke("If your key is encrypted, run this in a PowerShell window BEFORE using this toolkit:`r`n  ssh-add `"$KeyPath`"`r`n")
-        return $true
+        try { $AppendLog.Invoke("[WARN] Key is not detected as loaded and no passphrase was provided.`r`n") } catch {}
+        try { $AppendLog.Invoke("[WARN] Provide the passphrase in the Password / SSH Key Passphrase field and click Start again.`r`n") } catch {}
+        return $false
     }
 
-    $sshAddCmd = @"
-`$host.UI.RawUI.WindowTitle = 'Server Toolkit - SSH Key Passphrase';
+    $beforePubLines = @()
+    try { $beforePubLines = Get-AgentPubKeyLines } catch { $beforePubLines = @() }
+    try { $AppendLog.Invoke("[INFO] OWNED_KEYS: baseline captured (count=$($beforePubLines.Count)).`r`n") } catch {}
 
-Write-Host ''
-Write-Host 'Server Toolkit - SSH Key Passphrase Required' -ForegroundColor Cyan
-Write-Host '------------------------------------------------' -ForegroundColor Cyan
-Write-Host ''
-Write-Host 'A secure terminal window has opened to unlock your SSH key.' -ForegroundColor Yellow
-Write-Host 'Please enter the passphrase for your SSH key when prompted.' -ForegroundColor Yellow
-Write-Host ''
-Write-Host 'Once the passphrase is accepted, you can close this window.' -ForegroundColor Green
-Write-Host 'Then return to the Server Toolkit and click "Start Setup" again.' -ForegroundColor Green
-Write-Host ''
-ssh-add "$KeyPath"
+    $tmpDir = Join-Path ([IO.Path]::GetTempPath()) ("server-toolkit-askpass-" + [guid]::NewGuid().ToString("N"))
+    try { New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null } catch {}
+
+    $askpassPs1 = Join-Path $tmpDir "askpass.ps1"
+    $askpassCmd = Join-Path $tmpDir "askpass.cmd"
+
+    $pp = $Passphrase.Replace("'", "''")
+
+    $psContent = @"
+`$ErrorActionPreference = 'SilentlyContinue'
+[Console]::Write(@'
+$pp
+'@)
 "@
 
+    $cmdContent = "@echo off`r`n" +
+                  "`"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`" -NoProfile -ExecutionPolicy Bypass -File `"$askpassPs1`"`r`n"
+
+    try { Set-Content -LiteralPath $askpassPs1 -Value $psContent -Encoding UTF8 -Force } catch {}
+    try { Set-Content -LiteralPath $askpassCmd -Value $cmdContent -Encoding ASCII -Force } catch {}
+
+    try { $AppendLog.Invoke("[INFO] Unlocking SSH key via ssh-agent...`r`n") } catch {}
+
+    $exit = 1
+    $stderr = ""
+
     try {
-        $script:agentKeyAddedThisSession = $true
-        Start-Process powershell.exe `
-            -ArgumentList "-NoProfile -NoLogo -Command $sshAddCmd" `
-            -WorkingDirectory (Split-Path $KeyPath -Parent) `
-            -WindowStyle Normal | Out-Null
+        $psi2 = New-Object System.Diagnostics.ProcessStartInfo
+        $psi2.FileName = $sshAddExe
+        $psi2.Arguments = "`"$KeyPath`""
+        $psi2.UseShellExecute = $false
+        $psi2.RedirectStandardInput  = $true
+        $psi2.RedirectStandardOutput = $true
+        $psi2.RedirectStandardError  = $true
+        $psi2.CreateNoWindow = $true
 
-        $AppendLog.Invoke("A new terminal window has opened so you can enter the passphrase for your SSH key.`r`n")
-        $AppendLog.Invoke("After entering the passphrase there and closing that window, click Start Setup again to continue.`r`n")
+        $psi2.EnvironmentVariables["SSH_ASKPASS"] = $askpassCmd
+        $psi2.EnvironmentVariables["SSH_ASKPASS_REQUIRE"] = "force"
+        $psi2.EnvironmentVariables["DISPLAY"] = "1"
 
+        $p2 = New-Object System.Diagnostics.Process
+        $p2.StartInfo = $psi2
+        $p2.Start() | Out-Null
 
+        try { $p2.StandardInput.Close() } catch {}
+
+        if ($p2.WaitForExit(15000)) {
+            $exit = $p2.ExitCode
+            try { $stderr = $p2.StandardError.ReadToEnd() } catch { $stderr = "" }
+        } else {
+            try { $p2.Kill() } catch {}
+            $exit = 1
+            $stderr = "ssh-add timed out."
+        }
+    }
+    catch {
+        $exit = 1
+        $stderr = $_.Exception.Message
+    }
+    finally {
+        try { Remove-Item -LiteralPath $askpassCmd -Force -ErrorAction SilentlyContinue } catch {}
+        try { Remove-Item -LiteralPath $askpassPs1 -Force -ErrorAction SilentlyContinue } catch {}
+        try { Remove-Item -LiteralPath $tmpDir -Force -Recurse -ErrorAction SilentlyContinue } catch {}
+    }
+
+    if ($exit -ne 0) {
+        if ($stderr) {
+            $last = ($stderr -split "`r?`n" | Where-Object { $_ -and $_.Trim() -ne "" } | Select-Object -Last 1)
+            if ($last) {
+                try { $AppendLog.Invoke("[ERROR] ssh-add failed: $last`r`n") } catch {}
+            } else {
+                try { $AppendLog.Invoke("[ERROR] ssh-add failed (exit=$exit).`r`n") } catch {}
+            }
+        } else {
+            try { $AppendLog.Invoke("[ERROR] ssh-add failed (exit=$exit).`r`n") } catch {}
+        }
         return $false
+    }
+
+    try {
+        if (-not $beforePubLines) { $beforePubLines = @() }
+
+        Start-Sleep -Milliseconds 200
+
+        $after = @()
+        try { $after = Get-AgentPubKeyLines } catch { $after = @() }
+
+        $delta = @()
+        foreach ($ln in $after) {
+            if ($beforePubLines -notcontains $ln) { $delta += $ln }
+        }
+
+        if ($delta.Count -gt 0) {
+            Write-OwnedAgentPubKeys -PubKeyLines $delta
+            try { $AppendLog.Invoke("[INFO] Recorded owned agent pubkey lines (delta count=$($delta.Count)).`r`n") } catch {}
+        } else {
+            $fallback = @()
+            foreach ($ln in $after) {
+                if ($ln -like "*$KeyPath") { $fallback += $ln }
+            }
+
+            if ($fallback.Count -gt 0) {
+                Write-OwnedAgentPubKeys -PubKeyLines $fallback
+                try { $AppendLog.Invoke("[WARN] No pubkey delta detected; recorded fallback match by path (count=$($fallback.Count)).`r`n") } catch {}
+            } else {
+                try { $AppendLog.Invoke("[WARN] No pubkey delta detected and no fallback match found. Cleanup may not remove this key.`r`n") } catch {}
+            }
+        }
     } catch {
-        $AppendLog.Invoke("[WARN] Failed to launch interactive ssh-add console: $($_.Exception.Message)`r`n")
-        $script:agentKeyAddedThisSession = $false
-        return $true
+        try { $AppendLog.Invoke("[WARN] Failed recording owned pubkey lines: $($_.Exception.Message)`r`n") } catch {}
+    }
+
+    try { Start-KeyCleanupWatchdog } catch {}
+
+    try { $AppendLog.Invoke("[INFO] SSH key unlocked and loaded into ssh-agent.`r`n") } catch {}
+    return $true
+}
+
+function Show-P12PasswordDialog {
+    param(
+        [Parameter(Mandatory=$true)][string]$P12Path
+    )
+
+    $bgDark        = "#1e1f22"
+    $panelBg       = "#25272b"
+    $fgMain        = "#f0f0f0"
+    $fgMuted       = "#b0b0b0"
+    $fgAccent      = "#00a8ff"
+    $fgWarning     = "#f5c542"
+    $borderDark    = "#3b3f46"
+
+    $btnPrimary    = "#00a8ff"
+    $btnPrimaryH   = "#14b5ff"
+    $btnPrimaryP   = "#0090d0"
+
+    $btnSecondary  = "#3b3f46"
+    $btnSecondaryH = "#4a4f5a"
+    $btnSecondaryP = "#2f3238"
+
+    function New-ThemedButtonStyle {
+        param([string]$Normal,[string]$Hover,[string]$Pressed,[string]$ForegroundHex="#FFFFFF")
+
+        $style = New-Object System.Windows.Style([System.Windows.Controls.Button])
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Normal))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::ForegroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($ForegroundHex))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BorderThicknessProperty, (New-Object System.Windows.Thickness(0))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::PaddingProperty, (New-Object System.Windows.Thickness(14,6,14,6))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::CursorProperty, [System.Windows.Input.Cursors]::Hand))) | Out-Null
+
+        $tpl = New-Object System.Windows.Controls.ControlTemplate([System.Windows.Controls.Button])
+        $border = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
+        $border.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, (New-Object System.Windows.CornerRadius(4)))
+        $border.SetValue([System.Windows.Controls.Border]::BackgroundProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Control]::BackgroundProperty)))
+
+        $cp = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ContentPresenter])
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::MarginProperty, (New-Object System.Windows.Thickness(4,1,4,1)))
+
+        $border.AppendChild($cp) | Out-Null
+        $tpl.VisualTree = $border
+
+        $tOver = New-Object System.Windows.Trigger
+        $tOver.Property = [System.Windows.Controls.Control]::IsMouseOverProperty
+        $tOver.Value = $true
+        $tOver.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Hover))))) | Out-Null
+
+        $tPress = New-Object System.Windows.Trigger
+        $tPress.Property = [System.Windows.Controls.Primitives.ButtonBase]::IsPressedProperty
+        $tPress.Value = $true
+        $tPress.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Pressed))))) | Out-Null
+
+        $tDis = New-Object System.Windows.Trigger
+        $tDis.Property = [System.Windows.Controls.Control]::IsEnabledProperty
+        $tDis.Value = $false
+        $tDis.Setters.Add((New-Object System.Windows.Setter([System.Windows.UIElement]::OpacityProperty, 0.4))) | Out-Null
+
+        $tpl.Triggers.Add($tOver)  | Out-Null
+        $tpl.Triggers.Add($tPress) | Out-Null
+        $tpl.Triggers.Add($tDis)   | Out-Null
+
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::TemplateProperty, $tpl))) | Out-Null
+        return $style
+    }
+
+    $PrimaryBtnStyle   = New-ThemedButtonStyle -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
+    $SecondaryBtnStyle = New-ThemedButtonStyle -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
+
+    $w = New-Object System.Windows.Window
+    $w.Title = "P12 Password (Local Only)"
+    $w.Width = 720
+    $w.Height = 420
+    $w.WindowStartupLocation = "CenterOwner"
+    $w.ResizeMode = "NoResize"
+    $w.Owner = $MainWindow
+    $w.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($bgDark)
+    $w.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMain)
+    $w.FontFamily = "Segoe UI"
+
+    $root = New-Object System.Windows.Controls.Grid
+    $root.Margin = "18"
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="*"    })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+
+    $hdrRow = New-Object System.Windows.Controls.StackPanel
+    $hdrRow.Orientation = "Horizontal"
+    $hdrRow.Margin = "0,0,0,12"
+
+    $icon = New-Object System.Windows.Controls.TextBlock
+    $icon.FontFamily = "Segoe MDL2 Assets"
+    $icon.Text = [char]0xE72E
+    $icon.FontSize = 22
+    $icon.Margin = "0,1,10,0"
+    $icon.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgWarning)
+
+    $hdr = New-Object System.Windows.Controls.TextBlock
+    $hdr.Text = "Enter your P12 password (local only)"
+    $hdr.FontSize = 20
+    $hdr.FontWeight = "SemiBold"
+    $hdr.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgWarning)
+
+    $hdrRow.Children.Add($icon) | Out-Null
+    $hdrRow.Children.Add($hdr) | Out-Null
+    $root.Children.Add($hdrRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($hdrRow, 0)
+
+    $border = New-Object System.Windows.Controls.Border
+    $border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($panelBg)
+    $border.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString($borderDark)
+    $border.BorderThickness = "1"
+    $border.CornerRadius = "6"
+    $border.Padding = "14"
+
+    $body = New-Object System.Windows.Controls.StackPanel
+
+    $t1 = New-Object System.Windows.Controls.TextBlock
+    $t1.TextWrapping = "Wrap"
+    $t1.Margin = "0,0,0,10"
+    $t1.Text = "This password is used only on your PC to read the alias (friendlyName). It is NOT uploaded or sent to the server."
+    $body.Children.Add($t1) | Out-Null
+
+    $lblSel = New-Object System.Windows.Controls.TextBlock
+    $lblSel.Text = "Selected P12 file:"
+    $lblSel.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
+    $lblSel.FontWeight = "SemiBold"
+    $lblSel.Margin = "0,0,0,4"
+    $body.Children.Add($lblSel) | Out-Null
+
+    $sel = New-Object System.Windows.Controls.TextBlock
+    $sel.TextWrapping = "Wrap"
+    $sel.Margin = "0,0,0,12"
+    $sel.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMuted)
+    $sel.FontFamily = "Consolas"
+    $sel.Text = $P12Path
+    $body.Children.Add($sel) | Out-Null
+
+    $lblPw = New-Object System.Windows.Controls.TextBlock
+    $lblPw.Text = "P12 Password:"
+    $lblPw.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
+    $lblPw.FontWeight = "SemiBold"
+    $lblPw.Margin = "0,0,0,6"
+    $body.Children.Add($lblPw) | Out-Null
+
+    $pwBox = New-Object System.Windows.Controls.PasswordBox
+    $pwBox.Width = 420
+    $pwBox.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#2f3238")
+    $pwBox.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMain)
+    $pwBox.Padding = "6,4"
+    $body.Children.Add($pwBox) | Out-Null
+
+    $border.Child = $body
+    $root.Children.Add($border) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($border, 1)
+
+    $result = [hashtable]::Synchronized(@{ Ok=$false; Value="" })
+
+    $btnRow = New-Object System.Windows.Controls.StackPanel
+    $btnRow.Orientation = "Horizontal"
+    $btnRow.HorizontalAlignment = "Right"
+    $btnRow.Margin = "0,14,0,0"
+
+    $btnCancel = New-Object System.Windows.Controls.Button
+    $btnCancel.Content = "Cancel"
+    $btnCancel.Style = $SecondaryBtnStyle
+    $btnCancel.Margin = "0,0,10,0"
+    $btnCancel.Add_Click({ $result.Ok=$false; $result.Value=""; $w.Close() })
+    $btnRow.Children.Add($btnCancel) | Out-Null
+
+    $btnContinue = New-Object System.Windows.Controls.Button
+    $btnContinue.Content = "Continue"
+    $btnContinue.Style = $PrimaryBtnStyle
+    $btnContinue.Add_Click({
+        $val = $pwBox.Password
+        if ([string]::IsNullOrWhiteSpace($val)) {
+            [System.Windows.MessageBox]::Show($w, "Password cannot be empty.", "P12 Password Required",
+                [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning) | Out-Null
+            return
+        }
+        $result.Ok=$true
+        $result.Value=$val
+        $w.Close()
+    })
+    $btnRow.Children.Add($btnContinue) | Out-Null
+
+    $root.Children.Add($btnRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($btnRow, 2)
+
+    $w.Content = $root
+    try { $w.Add_ContentRendered({ try { $pwBox.Focus() } catch {} }) | Out-Null } catch {}
+    $null = $w.ShowDialog()
+
+    if ($result.Ok -eq $true) { return $result.Value }
+    return ""
+}
+
+function Show-PpkHelpDialog {
+    param(
+        [Parameter(Mandatory=$true)][string]$PpkPath
+    )
+
+    $url = "https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html"
+    $sshDir = Join-Path $HOME ".ssh"
+
+    $baseName = [IO.Path]::GetFileNameWithoutExtension($PpkPath)
+    $recommendedKey = Join-Path $sshDir ($baseName + "-ssh")
+
+    # Theme colors
+    $bgDark        = "#1e1f22"
+    $panelBg       = "#25272b"
+    $fgMain        = "#f0f0f0"
+    $fgMuted       = "#b0b0b0"
+    $fgAccent      = "#00a8ff"
+    $fgWarning     = "#f5c542"
+
+    $btnPrimary    = "#00a8ff"
+    $btnPrimaryH   = "#14b5ff"
+    $btnPrimaryP   = "#0090d0"
+
+    $btnSecondary  = "#3b3f46"
+    $btnSecondaryH = "#4a4f5a"
+    $btnSecondaryP = "#2f3238"
+
+    $borderDark    = "#3b3f46"
+
+    $w = New-Object System.Windows.Window
+    $w.Title = "PuTTY Key Not Supported"
+    $w.Width = 720
+    $w.Height = 600
+    $w.WindowStartupLocation = "CenterOwner"
+    $w.ResizeMode = "NoResize"
+    $w.Owner = $MainWindow
+    $w.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($bgDark)
+    $w.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMain)
+    $w.FontFamily = "Segoe UI"
+
+    $root = New-Object System.Windows.Controls.Grid
+    $root.Margin = "18"
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "*"    })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
+    function New-ThemedButtonStyle {
+        param(
+            [string]$Normal,
+            [string]$Hover,
+            [string]$Pressed,
+            [string]$ForegroundHex = "#FFFFFF"
+        )
+
+        $style = New-Object System.Windows.Style([System.Windows.Controls.Button])
+
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Normal))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::ForegroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($ForegroundHex))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BorderThicknessProperty, (New-Object System.Windows.Thickness(0))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::PaddingProperty, (New-Object System.Windows.Thickness(14,6,14,6))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::CursorProperty, [System.Windows.Input.Cursors]::Hand)) ) | Out-Null
+
+        $tpl = New-Object System.Windows.Controls.ControlTemplate([System.Windows.Controls.Button])
+
+        $border = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
+        $border.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, (New-Object System.Windows.CornerRadius(4)))
+        $border.SetValue([System.Windows.Controls.Border]::BackgroundProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Control]::BackgroundProperty)))
+
+        $cp = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ContentPresenter])
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::MarginProperty, (New-Object System.Windows.Thickness(4,1,4,1)))
+
+        $border.AppendChild($cp) | Out-Null
+        $tpl.VisualTree = $border
+
+        $tOver = New-Object System.Windows.Trigger
+        $tOver.Property = [System.Windows.Controls.Control]::IsMouseOverProperty
+        $tOver.Value = $true
+        $tOver.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Hover))))) | Out-Null
+
+        $tPress = New-Object System.Windows.Trigger
+        $tPress.Property = [System.Windows.Controls.Primitives.ButtonBase]::IsPressedProperty
+        $tPress.Value = $true
+        $tPress.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Pressed))))) | Out-Null
+
+        $tDis = New-Object System.Windows.Trigger
+        $tDis.Property = [System.Windows.Controls.Control]::IsEnabledProperty
+        $tDis.Value = $false
+        $tDis.Setters.Add((New-Object System.Windows.Setter([System.Windows.UIElement]::OpacityProperty, 0.4))) | Out-Null
+
+        $tpl.Triggers.Add($tOver) | Out-Null
+        $tpl.Triggers.Add($tPress) | Out-Null
+        $tpl.Triggers.Add($tDis) | Out-Null
+
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::TemplateProperty, $tpl))) | Out-Null
+        return $style
+    }
+
+    $PrimaryBtnStyle   = New-ThemedButtonStyle -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
+    $SecondaryBtnStyle = New-ThemedButtonStyle -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
+
+    $hdrRow = New-Object System.Windows.Controls.StackPanel
+    $hdrRow.Orientation = "Horizontal"
+    $hdrRow.Margin = "0,0,0,12"
+
+    $icon = New-Object System.Windows.Controls.TextBlock
+    $icon.FontFamily = "Segoe MDL2 Assets"
+    $icon.Text = [char]0xE72E
+    $icon.FontSize = 22
+    $icon.Margin = "0,1,10,0"
+    $icon.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgWarning)
+
+    $hdr = New-Object System.Windows.Controls.TextBlock
+    $hdr.Text = "PuTTY Private Key Detected (.ppk)"
+    $hdr.FontSize = 20
+    $hdr.FontWeight = "SemiBold"
+    $hdr.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgWarning)
+
+    $hdrRow.Children.Add($icon) | Out-Null
+    $hdrRow.Children.Add($hdr) | Out-Null
+
+    $root.Children.Add($hdrRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($hdrRow, 0)
+
+    # BODY
+    $border = New-Object System.Windows.Controls.Border
+    $border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($panelBg)
+    $border.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString($borderDark)
+    $border.BorderThickness = "1"
+    $border.CornerRadius = "6"
+    $border.Padding = "14"
+
+    $scroll = New-Object System.Windows.Controls.ScrollViewer
+    $scroll.VerticalScrollBarVisibility = "Auto"
+    $scroll.HorizontalScrollBarVisibility = "Disabled"
+
+    $body = New-Object System.Windows.Controls.StackPanel
+
+    $t1 = New-Object System.Windows.Controls.TextBlock
+    $t1.TextWrapping = "Wrap"
+    $t1.Margin = "0,0,0,10"
+    $t1.Text =
+        "This toolkit requires a standard OpenSSH private key. " +
+        "PuTTY (.ppk) keys cannot be used directly."
+    $body.Children.Add($t1) | Out-Null
+
+    $lblSel = New-Object System.Windows.Controls.TextBlock
+    $lblSel.Text = "Selected file:"
+    $lblSel.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
+    $lblSel.FontWeight = "SemiBold"
+    $lblSel.Margin = "0,0,0,4"
+    $body.Children.Add($lblSel) | Out-Null
+
+    $sel = New-Object System.Windows.Controls.TextBlock
+    $sel.TextWrapping = "Wrap"
+    $sel.Margin = "0,0,0,12"
+    $sel.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMuted)
+    $sel.FontFamily = "Consolas"
+    $sel.Text = $PpkPath
+    $body.Children.Add($sel) | Out-Null
+
+    $tStepsHdr = New-Object System.Windows.Controls.TextBlock
+    $tStepsHdr.Text = "How to convert your key:"
+    $tStepsHdr.FontWeight = "SemiBold"
+    $tStepsHdr.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
+    $tStepsHdr.Margin = "0,0,0,6"
+    $body.Children.Add($tStepsHdr) | Out-Null
+
+    $steps = New-Object System.Windows.Controls.TextBlock
+    $steps.TextWrapping = "Wrap"
+    $steps.Margin = "0,0,0,10"
+    $steps.Text =
+@"
+1) Open PuTTYgen
+
+2) Conversions -> Import Key
+   Select your .ppk file
+
+3) If prompted, enter your PPK passphrase
+
+4) Conversions -> Export OpenSSH key (force new file format)
+"@
+    $body.Children.Add($steps) | Out-Null
+    $lblRec = New-Object System.Windows.Controls.TextBlock
+    $lblRec.Text = "Recommended filename:"
+    $lblRec.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
+    $lblRec.FontWeight = "SemiBold"
+    $lblRec.Margin = "0,0,0,4"
+    $body.Children.Add($lblRec) | Out-Null
+
+    $rec = New-Object System.Windows.Controls.TextBlock
+    $rec.TextWrapping = "Wrap"
+    $rec.Margin = "0,0,0,14"
+    $rec.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMuted)
+    $rec.FontFamily = "Consolas"
+    $rec.Text = $recommendedKey
+    $body.Children.Add($rec) | Out-Null
+
+    $linkLine = New-Object System.Windows.Controls.TextBlock
+    $linkLine.Margin = "0,0,0,0"
+    $linkLine.Inlines.Add((New-Object System.Windows.Documents.Run("Download PuTTY: "))) | Out-Null
+
+    $hl = New-Object System.Windows.Documents.Hyperlink
+    $hl.Inlines.Add($url) | Out-Null
+    $hl.NavigateUri = [Uri]$url
+    $hl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
+    $hl.Add_Click({ try { Start-Process $url } catch {} })
+    $linkLine.Inlines.Add($hl) | Out-Null
+    $body.Children.Add($linkLine) | Out-Null
+
+    $scroll.Content = $body
+    $border.Child = $scroll
+
+    $root.Children.Add($border) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($border, 1)
+
+    $btnRow = New-Object System.Windows.Controls.StackPanel
+    $btnRow.Orientation = "Horizontal"
+    $btnRow.HorizontalAlignment = "Right"
+    $btnRow.Margin = "0,14,0,0"
+
+    $btnOpen = New-Object System.Windows.Controls.Button
+    $btnOpen.Content = "Open PuTTY Download"
+    $btnOpen.Style = $PrimaryBtnStyle
+    $btnOpen.Margin = "0,0,10,0"
+    $btnOpen.Add_Click({ try { Start-Process $url } catch {} })
+    $btnRow.Children.Add($btnOpen) | Out-Null
+
+    $btnCopyLink = New-Object System.Windows.Controls.Button
+    $btnCopyLink.Content = "Copy Download Link"
+    $btnCopyLink.Style = $SecondaryBtnStyle
+    $btnCopyLink.Margin = "0,0,10,0"
+    $btnCopyLink.Add_Click({ try { [System.Windows.Clipboard]::SetText($url) } catch {} })
+    $btnRow.Children.Add($btnCopyLink) | Out-Null
+
+    $btnCopyRec = New-Object System.Windows.Controls.Button
+    $btnCopyRec.Content = "Copy Recommended Filename"
+    $btnCopyRec.Style = $SecondaryBtnStyle
+    $btnCopyRec.Margin = "0,0,10,0"
+    $btnCopyRec.Add_Click({ try { [System.Windows.Clipboard]::SetText($recommendedKey) } catch {} })
+    $btnRow.Children.Add($btnCopyRec) | Out-Null
+
+    $btnOk = New-Object System.Windows.Controls.Button
+    $btnOk.Content = "OK"
+    $btnOk.Style = $SecondaryBtnStyle
+    $btnOk.Add_Click({ $w.Close() })
+    $btnRow.Children.Add($btnOk) | Out-Null
+
+    $root.Children.Add($btnRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($btnRow, 2)
+
+    $w.Content = $root
+    $null = $w.ShowDialog()
+}
+
+function Show-P12ValidatedDialog {
+    param(
+        [Parameter(Mandatory=$true)][string]$LocalPath,
+        [Parameter(Mandatory=$false)][string]$Alias = ""
+    )
+
+    # Theme colors
+    $bgDark        = "#1e1f22"
+    $panelBg       = "#25272b"
+    $fgMain        = "#f0f0f0"
+    $fgMuted       = "#b0b0b0"
+    $fgAccent      = "#00a8ff"
+    $fgOk          = "#47d16c"
+    $borderDark    = "#3b3f46"
+
+    $btnPrimary    = "#00a8ff"
+    $btnPrimaryH   = "#14b5ff"
+    $btnPrimaryP   = "#0090d0"
+
+    $btnSecondary  = "#3b3f46"
+    $btnSecondaryH = "#4a4f5a"
+    $btnSecondaryP = "#2f3238"
+
+    function New-ThemedButtonStyle {
+        param([string]$Normal,[string]$Hover,[string]$Pressed,[string]$ForegroundHex="#FFFFFF")
+
+        $style = New-Object System.Windows.Style([System.Windows.Controls.Button])
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Normal))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::ForegroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($ForegroundHex))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BorderThicknessProperty, (New-Object System.Windows.Thickness(0))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::PaddingProperty, (New-Object System.Windows.Thickness(14,6,14,6))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::CursorProperty, [System.Windows.Input.Cursors]::Hand))) | Out-Null
+
+        $tpl = New-Object System.Windows.Controls.ControlTemplate([System.Windows.Controls.Button])
+        $border = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
+        $border.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, (New-Object System.Windows.CornerRadius(4)))
+        $border.SetValue([System.Windows.Controls.Border]::BackgroundProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Control]::BackgroundProperty)))
+
+        $cp = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ContentPresenter])
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::MarginProperty, (New-Object System.Windows.Thickness(4,1,4,1)))
+
+        $border.AppendChild($cp) | Out-Null
+        $tpl.VisualTree = $border
+
+        $tOver = New-Object System.Windows.Trigger
+        $tOver.Property = [System.Windows.Controls.Control]::IsMouseOverProperty
+        $tOver.Value = $true
+        $tOver.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Hover))))) | Out-Null
+
+        $tPress = New-Object System.Windows.Trigger
+        $tPress.Property = [System.Windows.Controls.Primitives.ButtonBase]::IsPressedProperty
+        $tPress.Value = $true
+        $tPress.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Pressed))))) | Out-Null
+
+        $tDis = New-Object System.Windows.Trigger
+        $tDis.Property = [System.Windows.Controls.Control]::IsEnabledProperty
+        $tDis.Value = $false
+        $tDis.Setters.Add((New-Object System.Windows.Setter([System.Windows.UIElement]::OpacityProperty, 0.4))) | Out-Null
+
+        $tpl.Triggers.Add($tOver)  | Out-Null
+        $tpl.Triggers.Add($tPress) | Out-Null
+        $tpl.Triggers.Add($tDis)   | Out-Null
+
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::TemplateProperty, $tpl))) | Out-Null
+        return $style
+    }
+
+    $PrimaryBtnStyle   = New-ThemedButtonStyle -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
+    $SecondaryBtnStyle = New-ThemedButtonStyle -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
+
+    $shownAlias = $Alias
+    if ([string]::IsNullOrWhiteSpace($shownAlias)) { $shownAlias = "(none)" }
+
+    $shownLocal = $LocalPath
+    if ([string]::IsNullOrWhiteSpace($shownLocal)) { $shownLocal = "(unknown)" }
+
+    $w = New-Object System.Windows.Window
+    $w.Title = "P12 Validated (Local Only)"
+    $w.Width = 720
+    $w.Height = 440
+    $w.WindowStartupLocation = "CenterOwner"
+    $w.ResizeMode = "NoResize"
+    $w.Owner = $MainWindow
+    $w.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($bgDark)
+    $w.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMain)
+    $w.FontFamily = "Segoe UI"
+
+    $root = New-Object System.Windows.Controls.Grid
+    $root.Margin = "18"
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "*"    })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
+
+    # Header
+    $hdrRow = New-Object System.Windows.Controls.StackPanel
+    $hdrRow.Orientation = "Horizontal"
+    $hdrRow.Margin = "0,0,0,12"
+
+    $icon = New-Object System.Windows.Controls.TextBlock
+    $icon.FontFamily = "Segoe MDL2 Assets"
+    $icon.Text = [char]0xE73E
+    $icon.FontSize = 22
+    $icon.Margin = "0,1,10,0"
+    $icon.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgOk)
+
+    $hdr = New-Object System.Windows.Controls.TextBlock
+    $hdr.Text = "P12 validated locally (upload will proceed)"
+    $hdr.FontSize = 20
+    $hdr.FontWeight = "SemiBold"
+    $hdr.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgOk)
+
+    $hdrRow.Children.Add($icon) | Out-Null
+    $hdrRow.Children.Add($hdr) | Out-Null
+    $root.Children.Add($hdrRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($hdrRow, 0)
+
+    # Body
+    $border = New-Object System.Windows.Controls.Border
+    $border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($panelBg)
+    $border.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString($borderDark)
+    $border.BorderThickness = "1"
+    $border.CornerRadius = "6"
+    $border.Padding = "14"
+
+    $body = New-Object System.Windows.Controls.StackPanel
+
+    $t1 = New-Object System.Windows.Controls.TextBlock
+    $t1.TextWrapping = "Wrap"
+    $t1.Margin = "0,0,0,10"
+    $t1.Text = "Your password successfully unlocked the P12 on this PC. This does NOT upload your password; it is used locally only."
+    $body.Children.Add($t1) | Out-Null
+
+    $lblA = New-Object System.Windows.Controls.TextBlock
+    $lblA.Text = "Alias (friendlyName):"
+    $lblA.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
+    $lblA.FontWeight = "SemiBold"
+    $lblA.Margin = "0,0,0,4"
+    $body.Children.Add($lblA) | Out-Null
+
+    $tbA = New-Object System.Windows.Controls.TextBlock
+    $tbA.TextWrapping = "Wrap"
+    $tbA.Margin = "0,0,0,12"
+    $tbA.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMuted)
+    $tbA.FontFamily = "Consolas"
+    $tbA.Text = $shownAlias
+    $body.Children.Add($tbA) | Out-Null
+
+    $lblL = New-Object System.Windows.Controls.TextBlock
+    $lblL.Text = "Local file path:"
+    $lblL.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
+    $lblL.FontWeight = "SemiBold"
+    $lblL.Margin = "0,0,0,4"
+    $body.Children.Add($lblL) | Out-Null
+
+    $tbL = New-Object System.Windows.Controls.TextBlock
+    $tbL.TextWrapping = "Wrap"
+    $tbL.Margin = "0,0,0,0"
+    $tbL.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMuted)
+    $tbL.FontFamily = "Consolas"
+    $tbL.Text = $shownLocal
+    $body.Children.Add($tbL) | Out-Null
+
+    $border.Child = $body
+    $root.Children.Add($border) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($border, 1)
+
+    # Buttons
+    $btnRow = New-Object System.Windows.Controls.StackPanel
+    $btnRow.Orientation = "Horizontal"
+    $btnRow.HorizontalAlignment = "Right"
+    $btnRow.Margin = "0,14,0,0"
+
+    $btnCopyAlias = New-Object System.Windows.Controls.Button
+    $btnCopyAlias.Content = "Copy Alias"
+    $btnCopyAlias.Style = $SecondaryBtnStyle
+    $btnCopyAlias.Margin = "0,0,10,0"
+    $btnCopyAlias.Add_Click({
+        try {
+            $a = $shownAlias
+            if ([string]::IsNullOrWhiteSpace($a)) { $a = "(none)" }
+            [System.Windows.Clipboard]::SetText($a)
+        } catch {}
+    })
+    $btnRow.Children.Add($btnCopyAlias) | Out-Null
+
+    $btnCopyLocal = New-Object System.Windows.Controls.Button
+    $btnCopyLocal.Content = "Copy Local Path"
+    $btnCopyLocal.Style = $SecondaryBtnStyle
+    $btnCopyLocal.Margin = "0,0,10,0"
+    $btnCopyLocal.Add_Click({ try { [System.Windows.Clipboard]::SetText($shownLocal) } catch {} })
+    $btnRow.Children.Add($btnCopyLocal) | Out-Null
+
+    $btnCopyAll = New-Object System.Windows.Controls.Button
+    $btnCopyAll.Content = "Copy All"
+    $btnCopyAll.Style = $PrimaryBtnStyle
+    $btnCopyAll.Margin = "0,0,10,0"
+    $btnCopyAll.Add_Click({
+        try {
+            $txt = "P12 Alias: $shownAlias`r`nLocal Path: $shownLocal"
+            [System.Windows.Clipboard]::SetText($txt)
+        } catch {}
+    })
+    $btnRow.Children.Add($btnCopyAll) | Out-Null
+
+    $btnOk = New-Object System.Windows.Controls.Button
+    $btnOk.Content = "OK"
+    $btnOk.Style = $SecondaryBtnStyle
+    $btnOk.Add_Click({ $w.Close() })
+    $btnRow.Children.Add($btnOk) | Out-Null
+
+    $root.Children.Add($btnRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($btnRow, 2)
+
+    $w.Content = $root
+    $null = $w.ShowDialog()
+}
+
+function Show-Confirm3ChoiceDialog {
+    param(
+        [Parameter(Mandatory=$true)][string]$Title,
+        [Parameter(Mandatory=$true)][string]$Header,
+        [Parameter(Mandatory=$true)][string]$Body,
+        [Parameter(Mandatory=$true)][string]$YesText,
+        [Parameter(Mandatory=$true)][string]$NoText,
+        [Parameter(Mandatory=$true)][string]$CancelText
+    )
+
+    # Theme colors
+    $bgDark     = "#1e1f22"
+    $panelBg    = "#25272b"
+    $fgMain     = "#f0f0f0"
+    $fgMuted    = "#b0b0b0"
+    $fgAccent   = "#00a8ff"
+    $fgWarning  = "#f5c542"
+    $borderDark = "#3b3f46"
+
+    $btnPrimary    = "#00a8ff"
+    $btnPrimaryH   = "#14b5ff"
+    $btnPrimaryP   = "#0090d0"
+    $btnSecondary  = "#3b3f46"
+    $btnSecondaryH = "#4a4f5a"
+    $btnSecondaryP = "#2f3238"
+
+    function New-ThemedButtonStyle {
+        param([string]$Normal,[string]$Hover,[string]$Pressed,[string]$ForegroundHex="#FFFFFF")
+
+        $style = New-Object System.Windows.Style([System.Windows.Controls.Button])
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Normal))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::ForegroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($ForegroundHex))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BorderThicknessProperty, (New-Object System.Windows.Thickness(0))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::PaddingProperty, (New-Object System.Windows.Thickness(14,6,14,6))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::CursorProperty, [System.Windows.Input.Cursors]::Hand))) | Out-Null
+
+        $tpl = New-Object System.Windows.Controls.ControlTemplate([System.Windows.Controls.Button])
+        $border = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
+        $border.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, (New-Object System.Windows.CornerRadius(4)))
+        $border.SetValue([System.Windows.Controls.Border]::BackgroundProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Control]::BackgroundProperty)))
+
+        $cp = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ContentPresenter])
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::MarginProperty, (New-Object System.Windows.Thickness(4,1,4,1)))
+
+        $border.AppendChild($cp) | Out-Null
+        $tpl.VisualTree = $border
+
+        $tOver = New-Object System.Windows.Trigger
+        $tOver.Property = [System.Windows.Controls.Control]::IsMouseOverProperty
+        $tOver.Value = $true
+        $tOver.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Hover))))) | Out-Null
+
+        $tPress = New-Object System.Windows.Trigger
+        $tPress.Property = [System.Windows.Controls.Primitives.ButtonBase]::IsPressedProperty
+        $tPress.Value = $true
+        $tPress.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Pressed))))) | Out-Null
+
+        $tDis = New-Object System.Windows.Trigger
+        $tDis.Property = [System.Windows.Controls.Control]::IsEnabledProperty
+        $tDis.Value = $false
+        $tDis.Setters.Add((New-Object System.Windows.Setter([System.Windows.UIElement]::OpacityProperty, 0.4))) | Out-Null
+
+        $tpl.Triggers.Add($tOver)  | Out-Null
+        $tpl.Triggers.Add($tPress) | Out-Null
+        $tpl.Triggers.Add($tDis)   | Out-Null
+
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::TemplateProperty, $tpl))) | Out-Null
+        return $style
+    }
+
+    $PrimaryBtnStyle   = New-ThemedButtonStyle -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
+    $SecondaryBtnStyle = New-ThemedButtonStyle -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
+
+    $result = [hashtable]::Synchronized(@{ Choice = "cancel" })
+
+    $w = New-Object System.Windows.Window
+    $w.Title = $Title
+    $w.Width = 760
+    $w.Height = 460
+    $w.WindowStartupLocation = "CenterOwner"
+    $w.ResizeMode = "NoResize"
+    $w.Owner = $MainWindow
+    $w.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($bgDark)
+    $w.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMain)
+    $w.FontFamily = "Segoe UI"
+
+    $root = New-Object System.Windows.Controls.Grid
+    $root.Margin = "18"
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "*"    })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
+
+    # Header row
+    $hdrRow = New-Object System.Windows.Controls.StackPanel
+    $hdrRow.Orientation = "Horizontal"
+    $hdrRow.Margin = "0,0,0,12"
+
+    $icon = New-Object System.Windows.Controls.TextBlock
+    $icon.FontFamily = "Segoe MDL2 Assets"
+    $icon.Text = [char]0xE7BA
+    $icon.FontSize = 22
+    $icon.Margin = "0,1,10,0"
+    $icon.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgWarning)
+
+    $hdr = New-Object System.Windows.Controls.TextBlock
+    $hdr.Text = $Header
+    $hdr.FontSize = 20
+    $hdr.FontWeight = "SemiBold"
+    $hdr.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgWarning)
+
+    $hdrRow.Children.Add($icon) | Out-Null
+    $hdrRow.Children.Add($hdr) | Out-Null
+    $root.Children.Add($hdrRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($hdrRow, 0)
+
+    # Body
+    $border = New-Object System.Windows.Controls.Border
+    $border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($panelBg)
+    $border.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString($borderDark)
+    $border.BorderThickness = "1"
+    $border.CornerRadius = "6"
+    $border.Padding = "14"
+
+    $body = New-Object System.Windows.Controls.TextBlock
+    $body.TextWrapping = "Wrap"
+    $body.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMuted)
+    $body.FontFamily = "Consolas"
+    $body.Text = $Body
+
+    $border.Child = $body
+    $root.Children.Add($border) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($border, 1)
+
+    # Buttons
+    $btnRow = New-Object System.Windows.Controls.StackPanel
+    $btnRow.Orientation = "Horizontal"
+    $btnRow.HorizontalAlignment = "Right"
+    $btnRow.Margin = "0,14,0,0"
+
+    $btnYes = New-Object System.Windows.Controls.Button
+    $btnYes.Content = $YesText
+    $btnYes.Style = $PrimaryBtnStyle
+    $btnYes.Margin = "0,0,10,0"
+    $btnYes.Add_Click({ $result.Choice = "yes"; $w.Close() })
+    $btnRow.Children.Add($btnYes) | Out-Null
+
+    $btnNo = New-Object System.Windows.Controls.Button
+    $btnNo.Content = $NoText
+    $btnNo.Style = $SecondaryBtnStyle
+    $btnNo.Margin = "0,0,10,0"
+    $btnNo.Add_Click({ $result.Choice = "no"; $w.Close() })
+    $btnRow.Children.Add($btnNo) | Out-Null
+
+    $btnCancel = New-Object System.Windows.Controls.Button
+    $btnCancel.Content = $CancelText
+    $btnCancel.Style = $SecondaryBtnStyle
+    $btnCancel.Add_Click({ $result.Choice = "cancel"; $w.Close() })
+    $btnRow.Children.Add($btnCancel) | Out-Null
+
+    $root.Children.Add($btnRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($btnRow, 2)
+
+    $w.Content = $root
+    $null = $w.ShowDialog()
+
+    return $result.Choice
+}
+
+function Show-P12OverwriteDialog {
+    param(
+        [Parameter(Mandatory=$true)][string]$RemotePath,
+        [Parameter(Mandatory=$true)][string]$LocalPath
+    )
+
+    $rp = if ([string]::IsNullOrWhiteSpace($RemotePath)) { "(unknown)" } else { $RemotePath }
+    $lp = if ([string]::IsNullOrWhiteSpace($LocalPath))  { "(unknown)" } else { $LocalPath }
+
+    $body = @()
+    $body += "A P12 file already exists on the server:"
+    $body += ""
+    $body += "  $rp"
+    $body += ""
+    $body += "Local file selected:"
+    $body += ""
+    $body += "  $lp"
+    $body += ""
+    $body += "Choose what to do:"
+    $bodyText = ($body -join "`r`n")
+
+    $choice = Show-Confirm3ChoiceDialog `
+        -Title "P12 Already Exists" `
+        -Header "Remote P12 already exists" `
+        -Body $bodyText `
+        -YesText "Overwrite" `
+        -NoText "Backup + Overwrite" `
+        -CancelText "Skip"
+
+    if ($choice -eq "yes")    { return "overwrite" }
+    if ($choice -eq "no")     { return "backup" }
+    return "skip"
+}
+
+function Show-SaveProfileDialog {
+    param(
+        [Parameter(Mandatory=$true)][string]$ServerHost,
+        [Parameter(Mandatory=$true)][string]$SshPort,
+        [Parameter(Mandatory=$true)][string]$Username,
+        [Parameter(Mandatory=$false)][string]$IdentityFile,
+        [Parameter(Mandatory=$true)][int]$PromptFlag
+    )
+
+    # Theme colors
+    $bgDark     = "#1e1f22"
+    $panelBg    = "#25272b"
+    $fgMain     = "#f0f0f0"
+    $fgMuted    = "#b0b0b0"
+    $fgAccent   = "#00a8ff"
+    $fgWarning  = "#f5c542"
+    $borderDark = "#3b3f46"
+
+    $btnPrimary    = "#00a8ff"
+    $btnPrimaryH   = "#14b5ff"
+    $btnPrimaryP   = "#0090d0"
+    $btnSecondary  = "#3b3f46"
+    $btnSecondaryH = "#4a4f5a"
+    $btnSecondaryP = "#2f3238"
+
+    function New-ThemedButtonStyle {
+        param([string]$Normal,[string]$Hover,[string]$Pressed,[string]$ForegroundHex="#FFFFFF")
+        $style = New-Object System.Windows.Style([System.Windows.Controls.Button])
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Normal))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::ForegroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($ForegroundHex))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BorderThicknessProperty, (New-Object System.Windows.Thickness(0))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::PaddingProperty, (New-Object System.Windows.Thickness(14,6,14,6))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::CursorProperty, [System.Windows.Input.Cursors]::Hand))) | Out-Null
+
+        $tpl = New-Object System.Windows.Controls.ControlTemplate([System.Windows.Controls.Button])
+        $border = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
+        $border.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, (New-Object System.Windows.CornerRadius(4)))
+        $border.SetValue([System.Windows.Controls.Border]::BackgroundProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Control]::BackgroundProperty)))
+
+        $cp = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ContentPresenter])
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::MarginProperty, (New-Object System.Windows.Thickness(4,1,4,1)))
+
+        $border.AppendChild($cp) | Out-Null
+        $tpl.VisualTree = $border
+
+        $tOver = New-Object System.Windows.Trigger
+        $tOver.Property = [System.Windows.Controls.Control]::IsMouseOverProperty
+        $tOver.Value = $true
+        $tOver.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Hover))))) | Out-Null
+
+        $tPress = New-Object System.Windows.Trigger
+        $tPress.Property = [System.Windows.Controls.Primitives.ButtonBase]::IsPressedProperty
+        $tPress.Value = $true
+        $tPress.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Pressed))))) | Out-Null
+
+        $tpl.Triggers.Add($tOver)  | Out-Null
+        $tpl.Triggers.Add($tPress) | Out-Null
+
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::TemplateProperty, $tpl))) | Out-Null
+        return $style
+    }
+
+    $PrimaryBtnStyle   = New-ThemedButtonStyle -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
+    $SecondaryBtnStyle = New-ThemedButtonStyle -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
+
+    $result = [hashtable]::Synchronized(@{ Ok=$false; Name="" })
+
+    $defaultName = $ServerHost
+    foreach ($c in [IO.Path]::GetInvalidFileNameChars()) { $defaultName = $defaultName.Replace($c, '_') }
+
+    $statusLine = if ($PromptFlag -eq 1) { "Connection verified & setup complete." } else { "Connection verified (no changes)." }
+    $idLine = if ([string]::IsNullOrWhiteSpace($IdentityFile)) { "(none)" } else { $IdentityFile }
+
+    $w = New-Object System.Windows.Window
+    $w.Title = "Save Connection Profile"
+    $w.Width = 760
+    $w.Height = 520
+    $w.WindowStartupLocation = "CenterOwner"
+    $w.ResizeMode = "NoResize"
+    $w.Owner = $MainWindow
+    $w.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($bgDark)
+    $w.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMain)
+    $w.FontFamily = "Segoe UI"
+
+    $root = New-Object System.Windows.Controls.Grid
+    $root.Margin = "18"
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="*"    })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+
+    $hdr = New-Object System.Windows.Controls.TextBlock
+    $hdr.Text = $statusLine
+    $hdr.FontSize = 20
+    $hdr.FontWeight = "SemiBold"
+    $hdr.Margin = "0,0,0,12"
+    $hdr.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
+    $root.Children.Add($hdr) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($hdr, 0)
+
+    $border = New-Object System.Windows.Controls.Border
+    $border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($panelBg)
+    $border.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString($borderDark)
+    $border.BorderThickness = "1"
+    $border.CornerRadius = "6"
+    $border.Padding = "14"
+
+    $stack = New-Object System.Windows.Controls.StackPanel
+
+    $sum = @()
+    $sum += "Settings that will be saved:"
+    $sum += ""
+    $sum += "HostName: $ServerHost"
+    $sum += "User:     $Username"
+    $sum += "Port:     $SshPort"
+    $sum += "Identity: $idLine"
+    $sumTxt = ($sum -join "`r`n")
+
+    $tb = New-Object System.Windows.Controls.TextBlock
+    $tb.TextWrapping = "Wrap"
+    $tb.FontFamily = "Consolas"
+    $tb.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMuted)
+    $tb.Text = $sumTxt
+    $tb.Margin = "0,0,0,14"
+    $stack.Children.Add($tb) | Out-Null
+
+    $lbl = New-Object System.Windows.Controls.TextBlock
+    $lbl.Text = "Profile name (Host alias + filename):"
+    $lbl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
+    $lbl.FontWeight = "SemiBold"
+    $lbl.Margin = "0,0,0,6"
+    $stack.Children.Add($lbl) | Out-Null
+
+    $nameBox = New-Object System.Windows.Controls.TextBox
+    $nameBox.Text = $defaultName
+    $nameBox.Width = 520
+    $nameBox.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#2f3238")
+    $nameBox.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMain)
+    $nameBox.Padding = "6,4"
+    $stack.Children.Add($nameBox) | Out-Null
+
+    $sshDir = Join-Path ([Environment]::GetFolderPath('UserProfile')) ".ssh"
+    $pathHdr = New-Object System.Windows.Controls.TextBlock
+    $pathHdr.Text = "Will save to:"
+    $pathHdr.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
+    $pathHdr.FontWeight = "SemiBold"
+    $pathHdr.Margin = "0,14,0,6"
+    $stack.Children.Add($pathHdr) | Out-Null
+
+    $pathBox = New-Object System.Windows.Controls.TextBlock
+    $pathBox.TextWrapping = "Wrap"
+    $pathBox.FontFamily = "Consolas"
+    $pathBox.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMuted)
+    $pathBox.Margin = "0,0,0,0"
+
+    $existsWarn = New-Object System.Windows.Controls.TextBlock
+    $existsWarn.TextWrapping = "Wrap"
+    $existsWarn.FontWeight = "SemiBold"
+    $existsWarn.Margin = "0,10,0,6"
+    $existsWarn.Visibility = "Collapsed"
+    $warnColor = $fgWarning
+    if ([string]::IsNullOrWhiteSpace($warnColor)) { $warnColor = "#f5c542" }
+    $existsWarn.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($warnColor)
+    $stack.Children.Add($existsWarn) | Out-Null
+
+    $script:__SaveBtnRef = $null
+
+    $updatePath = {
+        try {
+            $n = $nameBox.Text
+            if ([string]::IsNullOrWhiteSpace($n)) {
+                $pathBox.Text = "(enter a profile name)"
+                $existsWarn.Visibility = "Collapsed"
+                if ($script:__SaveBtnRef) { $script:__SaveBtnRef.IsEnabled = $false }
+                return
+            }
+
+            $safe = $n
+            foreach ($c in [IO.Path]::GetInvalidFileNameChars()) { $safe = $safe.Replace($c, '_') }
+
+            $candidate = (Join-Path $sshDir ("{0}_ssh_config.txt" -f $safe))
+            $pathBox.Text = $candidate
+
+            $exists = $false
+            try { $exists = (Test-Path -LiteralPath $candidate) } catch { $exists = $false }
+
+            if ($exists) {
+                $existsWarn.Text = "Warning: This profile file already exists. If you continue, you will be asked to confirm overwrite."
+                $existsWarn.Visibility = "Visible"
+            } else {
+                $existsWarn.Visibility = "Collapsed"
+            }
+
+            if ($script:__SaveBtnRef) { $script:__SaveBtnRef.IsEnabled = $true }
+        } catch {
+            $pathBox.Text = "(unknown)"
+            $existsWarn.Visibility = "Collapsed"
+            if ($script:__SaveBtnRef) { $script:__SaveBtnRef.IsEnabled = $false }
+        }
+    }
+
+    $null = $nameBox.Add_TextChanged($updatePath)
+
+    & $updatePath
+
+    $stack.Children.Add($pathBox) | Out-Null
+
+    $border.Child = $stack
+    $root.Children.Add($border) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($border, 1)
+
+    $btnRow = New-Object System.Windows.Controls.StackPanel
+    $btnRow.Orientation = "Horizontal"
+    $btnRow.HorizontalAlignment = "Right"
+    $btnRow.Margin = "0,14,0,0"
+
+    $btnSave = New-Object System.Windows.Controls.Button
+
+    $script:__SaveBtnRef = $btnSave
+    $btnSave.Content = "Save Profile"
+    $btnSave.Style = $PrimaryBtnStyle
+    $btnSave.Margin = "0,0,10,0"
+    $btnSave.Add_Click({
+        $n = $nameBox.Text
+        if ([string]::IsNullOrWhiteSpace($n)) { return }
+
+        $targetPath = $pathBox.Text
+        $exists = $false
+        try { $exists = (Test-Path -LiteralPath $targetPath) } catch { $exists = $false }
+
+        if ($exists) {
+            $res = [System.Windows.MessageBox]::Show(
+                $w,
+                "This profile already exists:`r`n`r`n$targetPath`r`n`r`nOverwrite it?",
+                "Overwrite Profile?",
+                [System.Windows.MessageBoxButton]::YesNo,
+                [System.Windows.MessageBoxImage]::Warning
+            )
+            if ($res -ne [System.Windows.MessageBoxResult]::Yes) { return }
+        }
+
+        $result.Ok = $true
+        $result.Name = $n
+        $w.Close()
+    })
+    try { & $updatePath } catch {}
+    $btnRow.Children.Add($btnSave) | Out-Null
+
+    $btnSkip = New-Object System.Windows.Controls.Button
+    $btnSkip.Content = "Skip"
+    $btnSkip.Style = $SecondaryBtnStyle
+    $btnSkip.Margin = "0,0,10,0"
+    $btnSkip.Add_Click({ $result.Ok = $false; $result.Name=""; $w.Close() })
+    $btnRow.Children.Add($btnSkip) | Out-Null
+
+    $root.Children.Add($btnRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($btnRow, 2)
+
+    $w.Content = $root
+    try { $w.Add_ContentRendered({ try { $nameBox.SelectAll(); $nameBox.Focus() } catch {} }) | Out-Null } catch {}
+    $null = $w.ShowDialog()
+
+    if ($result.Ok -eq $true) { return $result.Name }
+    return ""
+}
+
+function Show-P12AliasDialog {
+    param(
+        [Parameter(Mandatory=$true)][string]$Alias,
+        [Parameter(Mandatory=$false)][string]$RemotePath = "",
+        [Parameter(Mandatory=$false)][string]$LocalPath = "",
+        [Parameter(Mandatory=$false)][string]$NodeId = ""
+    )
+
+    $bgDark        = "#1e1f22"
+    $panelBg       = "#25272b"
+    $fgMain        = "#f0f0f0"
+    $fgMuted       = "#b0b0b0"
+    $fgAccent      = "#00a8ff"
+    $fgWarning     = "#f5c542"
+    $borderDark    = "#3b3f46"
+
+    $btnPrimary    = "#00a8ff"
+    $btnPrimaryH   = "#14b5ff"
+    $btnPrimaryP   = "#0090d0"
+
+    $btnSecondary  = "#3b3f46"
+    $btnSecondaryH = "#4a4f5a"
+    $btnSecondaryP = "#2f3238"
+
+    function New-ThemedButtonStyle {
+        param(
+            [string]$Normal,
+            [string]$Hover,
+            [string]$Pressed,
+            [string]$ForegroundHex = "#FFFFFF"
+        )
+
+        $style = New-Object System.Windows.Style([System.Windows.Controls.Button])
+
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Normal))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::ForegroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($ForegroundHex))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BorderThicknessProperty, (New-Object System.Windows.Thickness(0))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::PaddingProperty, (New-Object System.Windows.Thickness(14,6,14,6))))) | Out-Null
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::CursorProperty, [System.Windows.Input.Cursors]::Hand)) ) | Out-Null
+
+        $tpl = New-Object System.Windows.Controls.ControlTemplate([System.Windows.Controls.Button])
+
+        $border = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
+        $border.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, (New-Object System.Windows.CornerRadius(4)))
+        $border.SetValue([System.Windows.Controls.Border]::BackgroundProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Control]::BackgroundProperty)))
+
+        $cp = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ContentPresenter])
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+        $cp.SetValue([System.Windows.Controls.ContentPresenter]::MarginProperty, (New-Object System.Windows.Thickness(4,1,4,1)))
+
+        $border.AppendChild($cp) | Out-Null
+        $tpl.VisualTree = $border
+
+        $tOver = New-Object System.Windows.Trigger
+        $tOver.Property = [System.Windows.Controls.Control]::IsMouseOverProperty
+        $tOver.Value = $true
+        $tOver.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Hover))))) | Out-Null
+
+        $tPress = New-Object System.Windows.Trigger
+        $tPress.Property = [System.Windows.Controls.Primitives.ButtonBase]::IsPressedProperty
+        $tPress.Value = $true
+        $tPress.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Pressed))))) | Out-Null
+
+        $tDis = New-Object System.Windows.Trigger
+        $tDis.Property = [System.Windows.Controls.Control]::IsEnabledProperty
+        $tDis.Value = $false
+        $tDis.Setters.Add((New-Object System.Windows.Setter([System.Windows.UIElement]::OpacityProperty, 0.4))) | Out-Null
+
+        $tpl.Triggers.Add($tOver) | Out-Null
+        $tpl.Triggers.Add($tPress) | Out-Null
+        $tpl.Triggers.Add($tDis) | Out-Null
+
+        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::TemplateProperty, $tpl))) | Out-Null
+        return $style
+    }
+
+    $PrimaryBtnStyle   = New-ThemedButtonStyle -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
+    $SecondaryBtnStyle = New-ThemedButtonStyle -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
+
+    function New-CopyRow {
+        param(
+            [Parameter(Mandatory=$true)][System.Windows.Controls.StackPanel]$Parent,
+            [Parameter(Mandatory=$true)][string]$Label,
+            [Parameter(Mandatory=$true)][string]$Value,
+            [Parameter(Mandatory=$true)][string]$Tooltip
+        )
+
+        $safeValue = if ([string]::IsNullOrWhiteSpace($Value)) { "(not available)" } else { $Value }
+
+        $lbl = New-Object System.Windows.Controls.TextBlock
+        $lbl.Text = $Label
+        $lbl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00a8ff")
+        $lbl.FontWeight = "SemiBold"
+        $lbl.Margin = "0,0,0,4"
+        $Parent.Children.Add($lbl) | Out-Null
+
+        $row = New-Object System.Windows.Controls.Border
+        $row.Tag = $safeValue
+        try { $null = $row.Resources.Remove("__CopyIcon") } catch {}
+        try { $null = $row.Resources.Remove("__CopyLabel") } catch {}
+        try { $row.Resources.Add("__CopyLabel", $Label) } catch {}
+
+        $row.ToolTip = $Tooltip
+
+        $row.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00000000")  # transparent but hit-testable
+        $row.CornerRadius = "4"
+        $row.Padding = "2,2"
+        $row.Margin = "0,0,0,12"
+        $row.Cursor = [System.Windows.Input.Cursors]::Hand
+
+        $inner = New-Object System.Windows.Controls.StackPanel
+        $inner.Orientation = "Horizontal"
+
+        $txt = New-Object System.Windows.Controls.TextBlock
+        $txt.Text = $safeValue
+        $txt.FontFamily = "Consolas"
+        $txt.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#b0b0b0")
+        $txt.TextWrapping = "Wrap"
+        $txt.MaxWidth = 560
+        $txt.VerticalAlignment = "Center"
+
+        $ico = New-Object System.Windows.Controls.TextBlock
+        $ico.FontFamily = "Segoe MDL2 Assets"
+        $ico.Text = [char]0xE8C8
+        $ico.FontSize = 16
+        $ico.Margin = "10,0,0,0"
+        $ico.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00a8ff")
+        $ico.VerticalAlignment = "Center"
+
+        $inner.Children.Add($txt) | Out-Null
+        $inner.Children.Add($ico) | Out-Null
+
+        try { $row.Resources["__CopyIcon"] = $ico } catch { try { $row.Resources.Add("__CopyIcon",$ico) } catch {} }
+
+        $row.Child = $inner
+        $Parent.Children.Add($row) | Out-Null
+
+        $hoverBg = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#22333842")
+        $normalBg = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00000000")
+
+        $row.Add_MouseEnter({
+            try { $row.Background = $hoverBg } catch {}
+        })
+        $row.Add_MouseLeave({
+            try { $row.Background = $normalBg } catch {}
+        })
+
+        $row.Add_MouseLeftButtonUp({
+            param($s,$e)
+            try { if ($e) { $e.Handled = $true } } catch {}
+
+            try {
+                $val = ""
+                try { $val = [string]$s.Tag } catch { $val = "" }
+
+                $lbl2 = ""
+                try { $lbl2 = [string]$s.Resources["__CopyLabel"] } catch { $lbl2 = "" }
+
+                $icon2 = $null
+                try { $icon2 = $s.Resources["__CopyIcon"] } catch { $icon2 = $null }
+
+                if ([string]::IsNullOrWhiteSpace($val)) { return }
+
+                try {
+                    [System.Windows.Clipboard]::SetText($val)
+                } catch {
+                    try { [System.Windows.Clipboard]::SetDataObject($val, $true) } catch {}
+                }
+
+                if ($icon2 -and ($icon2 -is [System.Windows.Controls.TextBlock])) {
+
+                    $icon2.Text = [char]0xE73E
+                    $icon2.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#47d16c")
+                    try {
+                        $icon2.Dispatcher.Invoke([Action]{}, [System.Windows.Threading.DispatcherPriority]::Render)
+                    } catch {}
+
+                    $timer = New-Object System.Windows.Threading.DispatcherTimer
+                    $timer.Interval = [TimeSpan]::FromMilliseconds(650)
+                    $timer.Tag = $icon2
+
+                    $timer.Add_Tick({
+                        param($sender, $evt)
+                        try {
+                            $sender.Tag.Text = [char]0xE8C8
+                            $sender.Tag.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00a8ff")
+                        } catch {}
+                        try { $sender.Stop() } catch {}
+                    })
+
+                    $timer.Start()
+                }
+
+            } catch {
+                try {
+                    Add-Content -Path $global:ServerToolkitLogPath -Value (
+                        (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") +
+                        " [ERROR] Copy row failed: " + $_.Exception.ToString() + "`r`n"
+                    ) -Encoding UTF8 -ErrorAction SilentlyContinue
+                } catch {}
+            }
+        })
+    }
+
+    $w = New-Object System.Windows.Window
+    $w.Title = "P12 file details"
+    $w.Width = 720
+    $w.Height = 420
+    $w.WindowStartupLocation = "CenterOwner"
+    $w.ResizeMode = "NoResize"
+    $w.Owner = $MainWindow
+    $w.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($bgDark)
+    $w.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMain)
+    $w.FontFamily = "Segoe UI"
+
+    $root = New-Object System.Windows.Controls.Grid
+    $root.Margin = "18"
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "*"    })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
+
+    $hdrRow = New-Object System.Windows.Controls.StackPanel
+    $hdrRow.Orientation = "Horizontal"
+    $hdrRow.Margin = "0,0,0,12"
+
+    $icon = New-Object System.Windows.Controls.TextBlock
+    $icon.FontFamily = "Segoe MDL2 Assets"
+    $icon.Text = [char]0xE7BA   # info glyph
+    $icon.FontSize = 22
+    $icon.Margin = "0,1,10,0"
+    $icon.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgWarning)
+
+    $hdr = New-Object System.Windows.Controls.TextBlock
+    $hdr.Text = "Document your P12 file details"
+    $hdr.FontSize = 20
+    $hdr.FontWeight = "SemiBold"
+    $hdr.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgWarning)
+
+    $hdrRow.Children.Add($icon) | Out-Null
+    $hdrRow.Children.Add($hdr) | Out-Null
+    $root.Children.Add($hdrRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($hdrRow, 0)
+
+    $border = New-Object System.Windows.Controls.Border
+    $border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($panelBg)
+    $border.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString($borderDark)
+    $border.BorderThickness = "1"
+    $border.CornerRadius = "6"
+    $border.Padding = "14"
+
+    $body = New-Object System.Windows.Controls.StackPanel
+
+    $t1 = New-Object System.Windows.Controls.TextBlock
+    $t1.TextWrapping = "Wrap"
+    $t1.Margin = "0,0,0,10"
+    $t1.Text = "This alias is commonly required later when importing or referencing the wallet. Copy it now and save it somewhere safe."
+    $body.Children.Add($t1) | Out-Null
+
+    New-CopyRow -Parent $body -Label "P12 Alias:" -Value $Alias -Tooltip "Click to copy Alias"
+
+    $nid = $NodeId
+    if ([string]::IsNullOrWhiteSpace($nid)) { $nid = "(not available)" }
+
+    New-CopyRow -Parent $body -Label "Node ID:" -Value $nid -Tooltip "Click to copy Node ID"
+
+    $shownRemote = $RemotePath
+    if ([string]::IsNullOrWhiteSpace($shownRemote)) { $shownRemote = "(unknown)" }
+
+    $shownLocal = $LocalPath
+    if ([string]::IsNullOrWhiteSpace($shownLocal)) { $shownLocal = "(unknown)" }
+
+    New-CopyRow -Parent $body -Label "Uploaded to (remote path):" -Value $shownRemote -Tooltip "Click to copy Remote Path"
+
+    New-CopyRow -Parent $body -Label "Local file path:" -Value $shownLocal -Tooltip "Click to copy Local Path"
+
+    $border.Child = $body
+    $root.Children.Add($border) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($border, 1)
+
+    $btnRow = New-Object System.Windows.Controls.StackPanel
+    $btnRow.Orientation = "Horizontal"
+    $btnRow.HorizontalAlignment = "Right"
+    $btnRow.Margin = "0,14,0,0"
+
+    $btnCopyDetails = New-Object System.Windows.Controls.Button
+    $btnCopyDetails.Content = "Copy Details"
+    $btnCopyDetails.Style = $SecondaryBtnStyle
+    $btnCopyDetails.Margin = "0,0,10,0"
+    $btnCopyDetails.Add_Click({
+        try {
+            $a = $Alias
+            if ([string]::IsNullOrWhiteSpace($a)) { $a = "(none)" }
+
+            $rp = $RemotePath
+            if ([string]::IsNullOrWhiteSpace($rp)) { $rp = "(unknown)" }
+
+            $lp = $LocalPath
+            if ([string]::IsNullOrWhiteSpace($lp)) { $lp = "(unknown)" }
+
+            $n = $NodeId
+            if ([string]::IsNullOrWhiteSpace($n)) { $n = "(not available)" }
+
+            $txt = @(
+                "P12 Alias: $a"
+                "Node ID:   $n"
+                "Remote Path: $rp"
+                "Local Path:  $lp"
+            ) -join "`r`n"
+
+            $MainWindow.Dispatcher.Invoke([Action]{
+                [System.Windows.Clipboard]::SetText($txt)
+            })
+        } catch {}
+    })
+    $btnRow.Children.Add($btnCopyDetails) | Out-Null
+
+    $btnOk = New-Object System.Windows.Controls.Button
+    $btnOk.Content = "OK"
+    $btnOk.Style = $PrimaryBtnStyle
+    $btnOk.Add_Click({ $w.Close() })
+    $btnRow.Children.Add($btnOk) | Out-Null
+
+    $root.Children.Add($btnRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($btnRow, 2)
+
+    $w.Content = $root
+    if (-not $w.IsVisible) {
+        $null = $w.ShowDialog()
     }
 }
 
 $BrowseKeyButton.Add_Click({
+
     $dlg = New-Object Microsoft.Win32.OpenFileDialog
-    $dlg.Title = "Select Private Key File"
-    $dlg.Filter = "Private Key Files (*.ppk;*.pem;*.key)|*.ppk;*.pem;*.key|All Files|*.*"
-    if ($dlg.ShowDialog()) {
-        $KeyBox.Text = $dlg.FileName
+    $dlg.Title  = "Select SSH Private Key File"
+    $dlg.Filter = "All Files|*.*"
+
+    if (-not $dlg.ShowDialog()) {
+        return
     }
+
+    $chosen = $dlg.FileName
+
+    if (-not (Test-Path -LiteralPath $chosen)) {
+        try { $script:AppendLog.Invoke("[ERROR] Selected key file does not exist: $chosen`r`n") } catch {}
+        return
+    }
+
+    $firstLine = $null
+    try {
+        $firstLine = (Get-Content -LiteralPath $chosen -TotalCount 1 -ErrorAction Stop)
+    } catch {
+        try { $script:AppendLog.Invoke("[ERROR] Failed to read key file header: $($_.Exception.Message)`r`n") } catch {}
+        return
+    }
+
+    $firstLine = $firstLine.Trim()
+
+    $isPuttyPPK = ($firstLine -like "PuTTY-User-Key-File-*")
+    $isOpenSSH  = ($firstLine -eq "-----BEGIN OPENSSH PRIVATE KEY-----")
+    $isPEM      = ($firstLine -match "^-----BEGIN .*PRIVATE KEY-----$")
+
+    if ($isPuttyPPK) {
+        try { Show-PpkHelpDialog -PpkPath $chosen } catch {}
+        return
+    }
+
+    if (-not ($isOpenSSH -or $isPEM)) {
+        [System.Windows.MessageBox]::Show(
+            $MainWindow,
+            "The selected file does not appear to be a valid SSH private key.`r`n`r`n" +
+            "Expected formats:`r`n" +
+            "• OpenSSH private key`r`n" +
+            "• PEM private key`r`n`r`n" +
+            "First line read:`r`n$firstLine",
+            "Invalid Key File",
+            [System.Windows.MessageBoxButton]::OK,
+            [System.Windows.MessageBoxImage]::Error
+        ) | Out-Null
+        return
+    }
+
+    $KeyBox.Text = $chosen
+    try { $script:AppendLog.Invoke("Selected SSH private key: $chosen`r`n") } catch {}
 })
+
+if ($BrowseP12Button -and $P12PathBox) {
+    $BrowseP12Button.Add_Click({
+        try {
+            $dlg = New-Object Microsoft.Win32.OpenFileDialog
+            $dlg.Title  = "Select P12 Wallet File"
+            $dlg.Filter = "P12 Wallet File (*.p12)|*.p12|All Files|*.*"
+
+            if ($dlg.ShowDialog()) {
+
+                $chosen = $dlg.FileName
+                $ext = [IO.Path]::GetExtension($chosen).ToLower()
+
+                if ($ext -ne ".p12") {
+                    try {
+                        [System.Windows.MessageBox]::Show(
+                            $MainWindow,
+                            "Only .p12 files are supported for wallet upload.`r`n`r`nSelected:`r`n$chosen",
+                            "Invalid File Type",
+                            [System.Windows.MessageBoxButton]::OK,
+                            [System.Windows.MessageBoxImage]::Warning
+                        ) | Out-Null
+                    } catch {}
+                    return
+                }
+
+                $prevP12 = ""
+                try { if ($P12PathBox) { $prevP12 = ($P12PathBox.Text).Trim() } } catch { $prevP12 = "" }
+
+                $P12PathBox.Text = $chosen
+
+                try {
+                    if ($P12PasswordBox -and -not [string]::IsNullOrWhiteSpace($prevP12) -and ($prevP12 -ne $chosen)) {
+                        $P12PasswordBox.Password = ""
+                        if ($script:AppendLog) { $script:AppendLog.Invoke("DEBUG: P12 file changed. Cleared P12 passphrase field.`r`n") }
+                    }
+                } catch {}
+
+                try { if ($script:AppendLog) { $script:AppendLog.Invoke("Selected P12: $chosen`r`n") } } catch {}
+            }
+        } catch {
+            try { if ($script:AppendLog) { $script:AppendLog.Invoke("[ERROR] P12 browse failed: $($_.Exception.Message)`r`n") } } catch {}
+        }
+    })
+}
 
 $MenuLoadProfile.Add_Click({
     $dlg = New-Object Microsoft.Win32.OpenFileDialog
@@ -752,734 +4856,893 @@ $MenuLoadProfile.Add_Click({
                     $KeyBox.Text = $KeyPathLocal
                 }
             }
-            $AppendLog.Invoke("Profile loaded: $($dlg.FileName)`r`n")
+            $script:AppendLog.Invoke("Profile loaded: $($dlg.FileName)`r`n")
         } catch {
-            $AppendLog.Invoke("[ERROR] Failed to load profile: $_`r`n")
+            $script:AppendLog.Invoke("[ERROR] Failed to load profile: $_`r`n")
         }
     }
 })
 
 $MenuSaveProfile.Add_Click({
+
     $dlg = New-Object Microsoft.Win32.SaveFileDialog
     $dlg.Title = "Save SSH Profile"
     $dlg.Filter = "SSH Profile (*.ssh_config.txt)|*.ssh_config.txt|All Files|*.*"
+
     $homeSSH = [IO.Path]::Combine([Environment]::GetFolderPath('UserProfile'), ".ssh")
     if (-not [IO.Directory]::Exists($homeSSH)) { [IO.Directory]::CreateDirectory($homeSSH) | Out-Null }
     $dlg.InitialDirectory = $homeSSH
+
     $baseName = $HostBox.Text
     if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = "profile" }
     $baseName = $baseName.Replace(":", "_")
     $dlg.FileName = "${baseName}_ssh_config.txt"
-    if ($dlg.ShowDialog()) {
-        try {
-            $profilePath = $dlg.FileName
-            $alias = [IO.Path]::GetFileNameWithoutExtension($profilePath)
-            $alias = $alias -replace "_ssh_config$", ""
-            $hostName = $HostBox.Text
-            $port = $PortBox.Text
-            $rootUser = $UserBox.Text
-            $newUser = $NewUserBox.Text
-            $profileUser = if (-not [string]::IsNullOrWhiteSpace($newUser)) { $newUser } else { $rootUser }
-            $identity = $KeyBox.Text
-            $content = @()
-            $content += "### This ssh_config file can also be used to import this server's settings into Termius. ###"
-            $content += ""
-            $content += "Host $alias"
-            $content += "    HostName $hostName"
-            $content += "    User $profileUser"
-            $content += "    Port $port"
-            if (-not [string]::IsNullOrWhiteSpace($identity)) {
-                $content += "    IdentityFile $identity"
-            }
-            $content += ""
-            $content += "# CreatedOn: $(Get-Date -Format yyyy-MM-dd)"
-            $keyPart = if (-not [string]::IsNullOrEmpty($identity)) { "-i $identity " } else { "" }
-            $content += "# SSH login: ssh ${keyPart}${profileUser}@${hostName}"
-            $content += "# SFTP: sftp ${keyPart}${profileUser}@${hostName}"
-            $content | Out-File -FilePath $profilePath -Encoding ASCII
-            $AppendLog.Invoke("Profile saved to: $profilePath`r`n")
-        } catch {
-            $AppendLog.Invoke("[ERROR] Failed to save profile: $_`r`n")
-        }
-    }
-})
 
-$MenuExit.Add_Click({
-    $Window.Close()
-})
+    if (-not $dlg.ShowDialog()) { return }
 
-$StartButton.Add_Click({
-    $LogBox.Clear()
     try {
-        $AppendLog.Invoke("=== StartButton clicked at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ===`r`n")
+        $profilePath = $dlg.FileName
+        $alias = [IO.Path]::GetFileNameWithoutExtension($profilePath)
+        $alias = $alias -replace "_ssh_config$", ""
 
-        $serverHost = $HostBox.Text.Trim()
-        $port       = $PortBox.Text.Trim()
-        $user       = $UserBox.Text.Trim()
-        $pass       = $PasswordBox.Password
-        $keyPath    = $KeyBox.Text.Trim()
-        $newUser    = $NewUserBox.Text.Trim()
-        $newPass    = $NewPasswordBox.Password
-        $disableRoot = $DisableRootCheck.IsChecked -and $DisableRootCheck.IsChecked.Value
+        $hostName = $HostBox.Text
+        $port     = $PortBox.Text
+        $rootUser = $UserBox.Text
+        $newUser  = $NewUserBox.Text
 
-        if ([string]::IsNullOrWhiteSpace($serverHost) -or [string]::IsNullOrWhiteSpace($user) -or [string]::IsNullOrWhiteSpace($port)) {
-            $AppendLog.Invoke("[ERROR] Host, Port, and Username are required fields.`r`n")
-            return
+        $profileUser = if (-not [string]::IsNullOrWhiteSpace($newUser)) { $newUser } else { $rootUser }
+        $identity = $KeyBox.Text
+
+        $content = @()
+        $content += "### This ssh_config file can also be used to import this server's settings into Termius. ###"
+        $content += ""
+        $content += "Host $alias"
+        $content += "    HostName $hostName"
+        $content += "    User $profileUser"
+        $content += "    Port $port"
+        if (-not [string]::IsNullOrWhiteSpace($identity)) {
+            $content += "    IdentityFile $identity"
         }
-        if ($port -notmatch '^\d+$') {
-            $AppendLog.Invoke("[ERROR] Port must be a number.`r`n")
-            return
-        }
-        if ([string]::IsNullOrWhiteSpace($newUser)) {
-            $AppendLog.Invoke("[ERROR] New Username is required.`r`n")
-            return
-        }
+        $content += ""
+        $content += "# CreatedOn: $(Get-Date -Format yyyy-MM-dd)"
+        $keyPart = if (-not [string]::IsNullOrEmpty($identity)) { "-i $identity " } else { "" }
+        $content += "# SSH login: ssh ${keyPart}${profileUser}@${hostName}"
+        $content += "# SFTP: sftp ${keyPart}${profileUser}@${hostName}"
 
-        Reset-HostKeysForServer -HostName $serverHost -Port $port
-
-        $script:useKeyAuth = $false
-        $script:usePasswordAuth = $false
-        $authMode = ""
-
-        if (-not [string]::IsNullOrWhiteSpace($keyPath)) {
-            if (-not (Test-Path $keyPath)) {
-                $AppendLog.Invoke("[ERROR] SSH key file not found: $keyPath`r`n")
-                return
-            }
-
-            $ext       = [IO.Path]::GetExtension($keyPath).ToLower()
-            $firstLine = (Get-Content -Path $keyPath -TotalCount 1 -ErrorAction Stop)
-
-            $isPuttyHeader   = $firstLine -like "PuTTY-User-Key-File-*"
-            $isOpenSshHeader = $firstLine -like "-----BEGIN OPENSSH PRIVATE KEY-----"
-            $isPemHeader     = $firstLine -like "-----BEGIN *PRIVATE KEY-----"
-
-            if ($ext -eq ".ppk" -or $isPuttyHeader) {
-                $conversionMessage = "You selected a PuTTY (.ppk) private key.`r`n`r`n" +
-                    "This type of key cannot be used directly with standard SSH tools or automation.`r`n`r`n" +
-                    "Your original .ppk file will not be changed.`r`n" +
-                    "The toolkit will create a new OpenSSH-compatible private key in your .ssh folder`r`n" +
-                    "and use that for SSH connections.`r`n`r`n" +
-                    "Do you want to convert this .ppk key now?"
-
-                $conversionResult = [System.Windows.MessageBox]::Show(
-                    $conversionMessage,
-                    "Convert PuTTY Key?",
-                    [System.Windows.MessageBoxButton]::YesNo,
-                    [System.Windows.MessageBoxImage]::Information
-                )
-
-                if ($conversionResult -ne [System.Windows.MessageBoxResult]::Yes) {
-                    $AppendLog.Invoke("You chose not to convert the PuTTY key. Key-based authentication will not be used.`r`n")
-                } else {
-                    $AppendLog.Invoke("Converting your PuTTY key into a standard SSH key for this setup...`r`n")
-
-                    $puttygenPath = ""
-                    try {
-                        $puttygenCmd = Get-Command puttygen.exe -ErrorAction Stop
-                        $puttygenPath = $puttygenCmd.Source
-                    } catch {
-                        $tempPg = Join-Path ([IO.Path]::GetTempPath()) "puttygen.exe"
-                        if (Test-Path $tempPg) {
-                            $puttygenPath = $tempPg
-                        }
-                    }
-
-                    if (-not $puttygenPath) {
-                        $AppendLog.Invoke("[ERROR] PuTTYgen (puttygen.exe) not found. Cannot convert .ppk to OpenSSH.`r`n")
-                        return
-                    }
-
-                    $sshDir = Join-Path $HOME ".ssh"
-                    if (-not (Test-Path $sshDir)) {
-                        New-Item -ItemType Directory -Path $sshDir | Out-Null
-                    }
-
-                    $openSshFileName = [IO.Path]::GetFileNameWithoutExtension($keyPath) + "-openssh.key"
-                    $openSshPath     = Join-Path $sshDir $openSshFileName
-
-                    if (Test-Path $openSshPath) {
-                        $existingHeader = ""
-                        try {
-                            $existingHeader = (Get-Content -Path $openSshPath -TotalCount 1 -ErrorAction Stop)
-                        } catch {
-                            $existingHeader = "<unable to read header>"
-                        }
-
-                        $msg = "An SSH private key file already exists at:`r`n`r`n" +
-                               "  $openSshPath`r`n`r`n" +
-                               "First line of the existing file:`r`n" +
-                               "  $existingHeader`r`n`r`n" +
-                               "If you overwrite this file, any other tools or servers using it may break.`r`n`r`n" +
-                               "Choose an option:`r`n" +
-                               "  Yes    = Overwrite this file with a new OpenSSH key derived from:`r`n" +
-                               "           $keyPath`r`n" +
-                               "  No     = Choose a different filename inside .ssh`r`n" +
-                               "  Cancel = Abort conversion"
-
-                        $overwriteResult = [System.Windows.MessageBox]::Show(
-                            $msg,
-                            "Existing SSH key detected",
-                            [System.Windows.MessageBoxButton]::YesNoCancel,
-                            [System.Windows.MessageBoxImage]::Warning
-                        )
-
-                        switch -Exact ($overwriteResult) {
-                            ([System.Windows.MessageBoxResult]::Yes) { }
-                            ([System.Windows.MessageBoxResult]::No) {
-                                $saveDlg = New-Object Microsoft.Win32.SaveFileDialog
-                                $saveDlg.Title            = "Save converted OpenSSH key as..."
-                                $saveDlg.InitialDirectory = $sshDir
-                                $saveDlg.FileName         = $openSshFileName
-                                $saveDlg.Filter           = "OpenSSH Private Key (*.key;*.*)|*.key;*.*"
-                                $saveResult = $saveDlg.ShowDialog()
-                                if (-not $saveResult) {
-                                    $AppendLog.Invoke("[INFO] User cancelled Save As dialog. Conversion cancelled.`r`n")
-                                    return
-                                }
-                                $openSshPath = $saveDlg.FileName
-                                $AppendLog.Invoke("User chose to save converted key as: $openSshPath`r`n")
-                            }
-                            ([System.Windows.MessageBoxResult]::Cancel) {
-                                $AppendLog.Invoke("[INFO] User cancelled conversion of .ppk key. No files were changed.`r`n")
-                                return
-                            }
-                            default {
-                                $AppendLog.Invoke("[INFO] Unexpected dialog result. Conversion cancelled.`r`n")
-                                return
-                            }
-                        }
-                    }
-
-                    $AppendLog.Invoke("Converted OpenSSH key will be saved to: $openSshPath`r`n")
-
-                    try {
-                        & $puttygenPath $keyPath -O private-openssh -o $openSshPath
-                        if (-not (Test-Path $openSshPath)) {
-                            $AppendLog.Invoke("[ERROR] PuTTYgen did not produce an OpenSSH key at: $openSshPath`r`n")
-                            return
-                        }
-                        $AppendLog.Invoke("Converted .ppk to OpenSSH key: $openSshPath`r`n")
-                        $keyPath = $openSshPath
-                        $script:useKeyAuth = $true
-                    } catch {
-                        $AppendLog.Invoke("[ERROR] Failed to convert .ppk to OpenSSH via PuTTYgen: $_`r`n")
-                        return
-                    }
-                }
-            }
-            elseif ($isOpenSshHeader -or $isPemHeader) {
-                $AppendLog.Invoke("Valid OpenSSH/PEM private key detected - using as-is: $keyPath`r`n")
-                $script:useKeyAuth = $true
-            }
-            else {
-                $AppendLog.Invoke("[ERROR] Unsupported SSH key format in file: $keyPath`r`n")
-                $AppendLog.Invoke("First line was: $firstLine`r`n")
-                return
-            }
-        }
-
-        $haveKey = $script:useKeyAuth
-        $havePass = -not [string]::IsNullOrWhiteSpace($pass)
-
-        if ($haveKey) {
-            $authMode = "key"
-            $script:usePasswordAuth = $false
-        } elseif ($havePass) {
-            $authMode = "password"
-            $script:usePasswordAuth = $true
-        } else {
-            $AppendLog.Invoke("[ERROR] You must provide either an SSH key (for agent-based auth) or a password for password-only setup.`r`n")
-            return
-        }
-
-        if ($authMode -eq "key") {
-            $AppendLog.Invoke("Using key-based authentication for $user@$serverHost (Password is treated as key passphrase).`r`n")
-            $agentOk = Ensure-SshAgentWithKey -KeyPath $keyPath -Passphrase $pass
-            if (-not $agentOk) {
-                $AppendLog.Invoke("[INFO] Waiting for you to complete ssh-add in the opened PowerShell window.`r`n")
-                $AppendLog.Invoke("[INFO] Once ssh-add succeeds and that window is closed, click Start Setup again in this GUI.`r`n")
-                return
-            }
-        } else {
-            $AppendLog.Invoke("Using password-based authentication for $user@$serverHost.`r`n")
-            if (-not (Ensure-PuttyTools)) {
-                $AppendLog.Invoke("[FATAL] plink.exe is required for password-only mode. Setup cannot continue.`r`n")
-                return
-            }
-        }
-
-        function Run-PlinkCommand {
-            param(
-                [string]$remoteCmd
-            )
-            $args = "-batch -ssh -P $port"
-            if ($script:useKeyAuth -and $authMode -eq "password") {
-                $args += " -i `"$keyPath`""
-            } elseif ($script:usePasswordAuth -and $pass) {
-                $args += " -pw `"$($pass)`""
-            }
-            $args += " -l $user $serverHost `"$remoteCmd`""
-
-            if ($args -like "* -pw *") {
-                $AppendLog.Invoke("DEBUG: Using plink at '$($global:PlinkPath)' with password-based authentication (details redacted).`r`n")
-            } else {
-                $AppendLog.Invoke("DEBUG: Using plink at '$($global:PlinkPath)' with args: $args`r`n")
-            }
-
-            $psi = New-Object System.Diagnostics.ProcessStartInfo
-            $psi.FileName = $global:PlinkPath
-            $psi.Arguments = $args
-            $psi.UseShellExecute = $false
-            $psi.RedirectStandardOutput = $true
-            $psi.RedirectStandardError = $true
-            $psi.RedirectStandardInput = $false
-            $psi.CreateNoWindow = $true
-
-            $proc = New-Object System.Diagnostics.Process
-            $proc.StartInfo = $psi
-            $proc.add_OutputDataReceived({ if ($_.Data -ne $null) { $AppendLog.Invoke("$($_.Data)`r`n") } })
-            $proc.add_ErrorDataReceived({ if ($_.Data -ne $null) { $AppendLog.Invoke("[ERROR] $($_.Data)`r`n") } })
-            $proc.Start() | Out-Null
-            $proc.BeginOutputReadLine()
-            $proc.BeginErrorReadLine()
-            while (-not $proc.HasExited) {
-                Start-Sleep -Milliseconds 100
-            }
-            $proc.WaitForExit()
-            return $proc.ExitCode
-        }
-
-        if ($authMode -eq "password") {
-            $initialExit = 0
-            $AppendLog.Invoke("Connecting to $serverHost on port $port (password lane, performing host-key acceptance)...`r`n")
-            try {
-                if (-not $global:PlinkPath -or -not (Test-Path $global:PlinkPath)) {
-                    $AppendLog.Invoke("[FATAL] plink.exe not found at '$($global:PlinkPath)'. Cannot perform host-key acceptance.`r`n")
-                    return
-                }
-                $hostKeyCmd = "echo y | `"$($global:PlinkPath)`" -ssh -P $port -l $user $serverHost exit"
-                $AppendLog.Invoke("DEBUG: Running automatic host-key acceptance via: cmd.exe /c $hostKeyCmd`r`n")
-                $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $hostKeyCmd" -WindowStyle Hidden -Wait -PassThru -ErrorAction Stop
-                $initialExit = $proc.ExitCode
-                $AppendLog.Invoke("DEBUG: Host-key acceptance plink exit code: $initialExit`r`n")
-            } catch {
-                $AppendLog.Invoke("[WARN] Automatic host-key acceptance command failed: $($_.Exception.Message)`r`n")
-                $initialExit = 0
-            }
-            if ($initialExit -ne 0) {
-                $AppendLog.Invoke("[WARN] Host-key acceptance command returned exit code $initialExit. Continuing with setup.`r`n")
-            } else {
-                $AppendLog.Invoke("Host key accepted or already trusted for ${serverHost}:${port}.`r`n")
-            }
-        } else {
-            $AppendLog.Invoke("Connecting to $serverHost on port $port using OpenSSH...`r`n")
-        }
-
-        $sudoPrefix = ""
-        if ($user -ne "root") { $sudoPrefix = "sudo -S -p '' " }
-
-        $sudoPassword = $null
-        if ($user -ne "root") {
-            if ($pass -and $authMode -eq "password") {
-                $sudoPassword        = $pass
-                $script:sudoPassword = $pass
-            }
-        }
-
-        function Run-RemoteCommand {
-            param(
-                [string]$cmd,
-                [bool]$checkOutput=$false
-            )
-
-            if ($user -eq "root") {
-                $fullCmd = $cmd
-            } else {
-                if ($sudoPassword) {
-                    $fullCmd = "echo `"${sudoPassword}`" | sudo -S -p '' $cmd"
-                } else {
-                    $fullCmd = "sudo -S -p '' $cmd"
-                }
-            }
-
-            if ($authMode -eq "key") {
-                if ($cmd -like "*chpasswd*") {
-                    $AppendLog.Invoke("DEBUG: Running remote ssh command: [REDACTED password update command]`r`n")
-                } elseif ($fullCmd -like "*sudo -S -p*") {
-                    $AppendLog.Invoke("DEBUG: Running remote ssh command: [REDACTED sudo password command]`r`n")
-                } else {
-                    $AppendLog.Invoke("DEBUG: Running remote ssh command: $fullCmd`r`n")
-                }
-                $exit = Run-SshCommand -RemoteCommand $fullCmd -RemoteHost $serverHost -Port $port -User $user -KeyPath $keyPath
-            } else {
-                if ($fullCmd -like "*sudo -S -p*") {
-                    $AppendLog.Invoke("DEBUG: Running remote plink command: [REDACTED sudo password command]`r`n")
-                } else {
-                    $AppendLog.Invoke("DEBUG: Running remote plink command: $fullCmd`r`n")
-                }
-                $exit = Run-PlinkCommand -remoteCmd $fullCmd
-            }
-
-            if ($exit -ne 0) {
-                $AppendLog.Invoke("[ERROR] Remote command failed (exit code $exit): $fullCmd`r`n")
-            }
-            return $exit
-        }
-
-        $AppendLog.Invoke("Creating '$newUser' user...`r`n")
-        $ensureUserCmd = "bash -c 'id -u $newUser >/dev/null 2>&1 || useradd -m -s /bin/bash $newUser'"
-        $exitCode = Run-RemoteCommand -cmd $ensureUserCmd
-        if ($exitCode -ne 0) {
-            $AppendLog.Invoke("[ERROR] Failed to ensure user '$newUser' exists (exit code $exitCode). Setup aborted.`r`n")
-            return
-        }
-        $AppendLog.Invoke("User '$newUser' exists.`r`n")
-
-        $AppendLog.Invoke("Adding '$newUser' to sudo group...`r`n")
-        $exitCode = Run-RemoteCommand -cmd "usermod -aG sudo $newUser"
-        if ($exitCode -ne 0) {
-            $AppendLog.Invoke("[ERROR] Failed to add user '$newUser' to sudo group. (Exit code $exitCode)`r`n")
-            return
-        } else {
-            $AppendLog.Invoke("User '$newUser' is now in sudo group.`r`n")
-        }
-
-        if (-not [string]::IsNullOrWhiteSpace($newPass)) {
-            $AppendLog.Invoke("Setting password for '$newUser'...`r`n")
-            $rawPair = $newUser + ":" + $newPass
-            $b64Pair = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($rawPair))
-
-            $cmdSetPass = "bash -c 'echo $b64Pair | base64 -d | chpasswd'"
-            $exitCode = Run-RemoteCommand -cmd $cmdSetPass
-
-            if ($exitCode -ne 0) {
-                $AppendLog.Invoke("[ERROR] Failed to set password for $newUser (Exit code $exitCode)`r`n")
-            } else {
-                $AppendLog.Invoke("Password set for '$newUser'.`r`n")
-            }
-        } else {
-            $AppendLog.Invoke("No password set for '$newUser' (account may be key-only).`r`n")
-        }
-
-        $AppendLog.Invoke("Copying authorized_keys to '$newUser'...`r`n")
-        $cmdCopy = 'bash -c ''mkdir -p /home/' + $newUser + '/.ssh && ' +
-            'if [ -f ~/.ssh/authorized_keys ]; then cp ~/.ssh/authorized_keys /home/' + $newUser + '/.ssh/authorized_keys && chmod 600 /home/' + $newUser + '/.ssh/authorized_keys; else echo "NO_AUTH_KEYS"; fi && ' +
-            'chown -R ' + $newUser + ':' + $newUser + ' /home/' + $newUser + '/.ssh && chmod 700 /home/' + $newUser + '/.ssh'''
-        $exitCode = Run-RemoteCommand -cmd $cmdCopy
-        if ($exitCode -ne 0) {
-            if ($LogBox.Text.Contains("NO_AUTH_KEYS")) {
-                $AppendLog.Invoke("[WARN] No authorized_keys found for $user; none copied for $newUser.`r`n")
-            } else {
-                $AppendLog.Invoke("[ERROR] Failed to copy authorized_keys (Exit code $exitCode).`r`n")
-            }
-        } else {
-            $AppendLog.Invoke("SSH key authorized for '$newUser'.`r`n")
-        }
-
-        $AppendLog.Invoke("Testing login for new user '$newUser'...`r`n")
-        $testExit = 1
-
-        if ($authMode -eq "key" -and -not [string]::IsNullOrWhiteSpace($keyPath) -and (Test-Path $keyPath)) {
-            $testCmd = "echo OK"
-            $testExit = Run-SshCommand -RemoteCommand $testCmd -RemoteHost $serverHost -Port $port -User $newUser -KeyPath $keyPath
-        } elseif (-not [string]::IsNullOrWhiteSpace($newPass) -and $authMode -eq "password") {
-            $AppendLog.Invoke("(Using password authentication for test)`r`n")
-            $testArgs = "-batch -ssh -P $port -l $newUser -pw `"$($newPass)`" `"echo OK`""
-            $psiTest = New-Object System.Diagnostics.ProcessStartInfo -Property @{
-                FileName = $global:PlinkPath
-                Arguments = $testArgs
-                UseShellExecute = $false
-                RedirectStandardOutput = $true
-                RedirectStandardError = $true
-                CreateNoWindow = $true
-            }
-            $procTest = New-Object System.Diagnostics.Process
-            $procTest.StartInfo = $psiTest
-            $out = New-Object System.Text.StringBuilder
-            $err = New-Object System.Text.StringBuilder
-            $procTest.add_OutputDataReceived({ if ($_.Data) { $out.AppendLine($_.Data) } })
-            $procTest.add_ErrorDataReceived({ if ($_.Data) { $err.AppendLine($_.Data) } })
-            $procTest.Start() | Out-Null
-            $procTest.BeginOutputReadLine()
-            $procTest.BeginErrorReadLine()
-            $procTest.WaitForExit()
-            $testExit = $procTest.ExitCode
-            if ($out.Length -gt 0) {
-                $AppendLog.Invoke("New user output: $($out.ToString().Trim())`r`n")
-            }
-            if ($err.Length -gt 0) {
-                $AppendLog.Invoke("[ERROR] New user error: $($err.ToString().Trim())`r`n")
-            }
-        } else {
-            $AppendLog.Invoke("[WARN] No key or password available to test new user login.`r`n")
-            $testExit = 1
-        }
-
-        if ($testExit -eq 0) {
-            $AppendLog.Invoke("New user '$newUser' login test successful.`r`n")
-        } else {
-            $AppendLog.Invoke("[ERROR] New user '$newUser' login test failed. Root login will not be disabled.`r`n")
-            $disableRoot = $false
-        }
-
-        if ($disableRoot) {
-            $AppendLog.Invoke("Disabling root SSH login and global password auth...`r`n")
-            $cmdDisableRoot = @"
-bash -c '
-if grep -q "^[#[:space:]]*PermitRootLogin" /etc/ssh/sshd_config; then
-sed -i "s/^[#[:space:]]*PermitRootLogin.*/PermitRootLogin no/" /etc/ssh/sshd_config;
-else
-echo "PermitRootLogin no" >> /etc/ssh/sshd_config;
-fi;
-if grep -q "^[#[:space:]]*PasswordAuthentication" /etc/ssh/sshd_config; then
-sed -i "s/^[#[:space:]]*PasswordAuthentication.*/PasswordAuthentication no/" /etc/ssh/sshd_config;
-else
-echo "PasswordAuthentication no" >> /etc/ssh/sshd_config;
-fi'
-"@
-            $exitCode = Run-RemoteCommand -cmd $cmdDisableRoot
-            if ($exitCode -ne 0) {
-                $AppendLog.Invoke("[ERROR] Failed to update sshd_config to disable root login and password auth.`r`n")
-            } else {
-                $AppendLog.Invoke("Root login and password authentication disabled in SSH config.`r`n")
-                $exitCode = Run-RemoteCommand -cmd "bash -c 'which systemctl >/dev/null 2>&1 && (systemctl reload sshd || systemctl reload ssh) || service ssh reload'"
-                if ($exitCode -ne 0) {
-                    $AppendLog.Invoke("[WARN] SSH service reload failed. You may need to restart SSH manually for changes to take effect.`r`n")
-                } else {
-                    $AppendLog.Invoke("SSH service reloaded to apply new settings.`r`n")
-                }
-            }
-        }
-
-        $AppendLog.Invoke("Setup process complete.`r`n")
+        $content | Out-File -FilePath $profilePath -Encoding ASCII
+        try { $script:AppendLog.Invoke("Profile saved to: $profilePath`r`n") } catch {}
     }
     catch {
-        $AppendLog.Invoke("[FATAL] Unexpected error during setup: $($_.Exception.Message)`r`n")
+        try { $script:AppendLog.Invoke("[ERROR] Failed to save profile: $_`r`n") } catch {}
     }
 })
 
-$SudoOkButton.Add_Click({
-    $Window.Dispatcher.Invoke([Action]{
-        $SudoOverlay.Visibility = "Collapsed"
+
+$MenuExit.Add_Click({
+    $MainWindow.Close()
+})
+
+if ($ResetHostKeysButton) {
+    $ResetHostKeysButton.Add_Click({
+
+        $h = ""
+        $p = ""
+
+        try { $h = ($HostBox.Text).Trim() } catch { $h = "" }
+        try { $p = ($PortBox.Text).Trim() } catch { $p = "" }
+
+        if ([string]::IsNullOrWhiteSpace($h) -or [string]::IsNullOrWhiteSpace($p) -or ($p -notmatch '^\d+$')) {
+            try { $script:AppendLog.Invoke("[ERROR] Enter a valid Host and numeric Port before resetting host keys.`r`n") } catch {}
+            try {
+                [System.Windows.MessageBox]::Show(
+                    $MainWindow,
+                    "Enter a valid Host and numeric Port first.",
+                    "Reset Host Keys",
+                    [System.Windows.MessageBoxButton]::OK,
+                    [System.Windows.MessageBoxImage]::Warning
+                ) | Out-Null
+            } catch {}
+            return
+        }
+
+        try { $script:AppendLog.Invoke("[INFO] Resetting host keys for $h (port $p)...`r`n") } catch {}
+
+        try {
+            Reset-HostKeysForServer -HostName $h -Port $p
+            try { $script:AppendLog.Invoke("[INFO] Host keys reset complete for $h (port $p).`r`n") } catch {}
+        } catch {
+            try { $script:AppendLog.Invoke("[ERROR] Host key reset failed: $($_.Exception.Message)`r`n") } catch {}
+        }
     })
-    $sudoPassInput = $SudoPassBox.Password
-    if ([string]::IsNullOrEmpty($sudoPassInput)) {
-        $AppendLog.Invoke("[ERROR] Sudo password was not provided. Aborting.`r`n")
-        return
-    }
-    $AppendLog.Invoke("Sudo password received. Resuming operations...`r`n")
-    $script:sudoPassword = $sudoPassInput
-    $exitCode = Run-RemoteCommand -cmd "useradd -m -s /bin/bash $($NewUserBox.Text.Trim())"
-    if ($exitCode -ne 0) {
-        $AppendLog.Invoke("[ERROR] Failed to create user even after sudo password. Aborting.`r`n")
-        return
-    }
-    $AppendLog.Invoke("User '$($NewUserBox.Text.Trim())' created successfully (after sudo password).`r`n")
-    Continue-SetupAfterUserCreation
-})
+}
 
-$SudoCancelButton.Add_Click({
-    $Window.Dispatcher.Invoke([Action]{
-        $SudoOverlay.Visibility = "Collapsed"
-    })
-    $AppendLog.Invoke("[ERROR] Sudo password prompt canceled by user. Aborting setup.`r`n")
-})
+# ==========================================================
+# START SETUP BUTTON
+# ==========================================================
+$StartButton.Add_Click({
 
-$RequireYesButton.Add_Click({
-    $Window.Dispatcher.Invoke([Action]{
-        $RequireOverlay.Visibility = "Collapsed"
-    })
-    $AppendLog.Invoke("Disabling requiretty and resuming operations...`r`n")
-    if (-not $script:sudoPassword) {
-        $AppendLog.Invoke("Please enter sudo password to disable requiretty...`r`n")
-        $Window.Dispatcher.Invoke([Action]{
-            $SudoOverlay.Visibility = "Visible"
-        })
-    } else {
-        Disable-RequirettyAndContinue
-    }
-})
-
-$RequireNoButton.Add_Click({
-    $Window.Dispatcher.Invoke([Action]{
-        $RequireOverlay.Visibility = "Collapsed"
-    })
-    $AppendLog.Invoke("User chose not to disable requiretty. Aborting setup.`r`n")
-})
-
-function Disable-RequirettyAndContinue {
-    $cmd = "sed -i 's/^Defaults\s\+requiretty/#&/' /etc/sudoers"
-    $plinkArgs = "-ssh -t -P $($PortBox.Text.Trim()) -l $($UserBox.Text.Trim())"
-    if ($script:useKeyAuth) {
-        $plinkArgs += " -i `"$($KeyBox.Text)`""
-    } elseif ($script:usePasswordAuth) {
-        $plinkArgs += " -pw `"$($PasswordBox.Password)`""
-    }
-    $plinkArgs += " `"echo $script:sudoPassword | sudo -S -p '' sed -i 's/^Defaults\s\+requiretty/#&/' /etc/sudoers`""
     try {
-        $output = & $global:PlinkPath $plinkArgs
-        $AppendLog.Invoke("requiretty disabled in sudoers.`r`n")
-    } catch {
-        $AppendLog.Invoke("[ERROR] Failed to disable requiretty: $_`r`n")
-    }
-    $AppendLog.Invoke("Resuming user creation...`r`n")
-    $exitCode = Run-RemoteCommand -cmd "useradd -m -s /bin/bash $($NewUserBox.Text.Trim())"
-    if ($exitCode -ne 0) {
-        $AppendLog.Invoke("[ERROR] Failed to create user even after disabling requiretty. Aborting.`r`n")
-        return
-    }
-    $AppendLog.Invoke("User '$($NewUserBox.Text.Trim())' created successfully.`r`n")
-    Continue-SetupAfterUserCreation
-}
+        $LogBox.Document.Blocks.Clear()
+        $LogBox.Document.Blocks.Add((New-Object System.Windows.Documents.Paragraph))
+    } catch {}
 
-function Continue-SetupAfterUserCreation {
-    $newUser = $NewUserBox.Text.Trim()
-    $AppendLog.Invoke("Adding '$newUser' to sudo group...`r`n")
-    $exitCode = Run-RemoteCommand -cmd "usermod -aG sudo $newUser"
-    if ($exitCode -ne 0) {
-        $AppendLog.Invoke("[ERROR] Failed to add user to sudo group. Aborting.`r`n")
-        return
-    } else {
-        $AppendLog.Invoke("User '$newUser' added to sudo group.`r`n")
-    }
+    try { Start-LogTail } catch {}
 
-    $newPass = $NewPasswordBox.Password
-    if (-not [string]::IsNullOrEmpty($newPass)) {
-        $AppendLog.Invoke("Setting password for '$newUser'...`r`n")
-        $rawPair = $newUser + ":" + $newPass
-        $b64Pair = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($rawPair))
+    try { & $script:SetUIEnabledSB $false } catch {}
+    try { $StartButton.IsEnabled = $false } catch {}
+    try { $StartButton.Content = "Working..." } catch {}
+    try { $script:IsBackgroundRunning = $true } catch {}
 
-        $cmdSetPass = "bash -c 'echo $b64Pair | base64 -d | chpasswd'"
-        $exitCode = Run-RemoteCommand -cmd $cmdSetPass
+    # -------------------------
+    # Read UI inputs
+    # -------------------------
+    $ui_serverHost = ""
+    $ui_port       = ""
+    $ui_user       = ""
+    $ui_pass       = ""
+    $ui_keyPath    = ""
+    $ui_newUser    = ""
+    $ui_newPass    = ""
+    $ui_disableRootChecked = $false
 
-        if ($exitCode -ne 0) {
-            $AppendLog.Invoke("[ERROR] Failed to set password for $newUser.`r`n")
-        } else {
-            $AppendLog.Invoke("Password set for '$newUser'.`r`n")
+    $ui_uploadP12  = $false
+    $ui_p12Path    = ""
+    $ui_p12Pass    = ""
+    $ui_p12Alias   = ""
+    $ui_p12NodeId  = ""
+
+    try { $ui_serverHost = $HostBox.Text.Trim() } catch {}
+    try { $ui_port       = $PortBox.Text.Trim() } catch {}
+    try { $ui_user       = $UserBox.Text.Trim() } catch {}
+    try { $ui_pass       = $PasswordBox.Password } catch {}
+    try { $ui_keyPath    = $KeyBox.Text.Trim() } catch {}
+    try { $ui_newUser    = $NewUserBox.Text.Trim() } catch {}
+    try { $ui_newPass    = $NewPasswordBox.Password } catch {}
+    try { $ui_disableRootChecked = ($DisableRootCheck.IsChecked -eq $true) } catch {}
+
+    try { $ui_uploadP12 = ($UploadP12Check -and ($UploadP12Check.IsChecked -eq $true)) } catch {}
+    try { $ui_p12Path   = if ($P12PathBox) { $P12PathBox.Text.Trim() } else { "" } } catch {}
+
+    # -------------------------
+    # Validate P12 locally
+    # -------------------------
+    if ($ui_uploadP12 -eq $true) {
+
+        if ([string]::IsNullOrWhiteSpace($ui_p12Path) -or -not (Test-Path -LiteralPath $ui_p12Path)) {
+            try { if ($script:AppendLog) { $script:AppendLog.Invoke("[ERROR] Upload P12 is enabled, but the selected file was not found.`r`n") } } catch {}
+            try { if ($UnlockUIAction) { $UnlockUIAction.Invoke() } } catch {}
+            return
         }
-    }
 
-    $AppendLog.Invoke("Copying authorized_keys to '$newUser'...`r`n")
-    $cmdCopy = 'bash -c ''mkdir -p /home/' + $newUser + '/.ssh && ' +
-    'if [ -f ~/.ssh/authorized_keys ]; then cp ~/.ssh/authorized_keys /home/' + $newUser + '/.ssh/authorized_keys && chmod 600 /home/' + $newUser + '/.ssh/authorized_keys; else echo "NO_AUTH_KEYS"; fi && ' +
-    'chown -R ' + $newUser + ':' + $newUser + ' /home/' + $newUser + '/.ssh && chmod 700 /home/' + $newUser + '/.ssh'''
-    $exitCode = Run-RemoteCommand -cmd $cmdCopy
-    if ($exitCode -ne 0) {
-        if ($LogBox.Text.Contains("NO_AUTH_KEYS")) {
-            $AppendLog.Invoke("[WARN] No authorized_keys to copy.`r`n")
-        } else {
-            $AppendLog.Invoke("[ERROR] Error copying authorized_keys. (Exit $exitCode)`r`n")
+        $ext = ""
+        try { $ext = [IO.Path]::GetExtension($ui_p12Path).ToLower() } catch { $ext = "" }
+        if ($ext -ne ".p12") {
+            try { if ($script:AppendLog) { $script:AppendLog.Invoke("[ERROR] Upload P12 is enabled, but the selected file is not a .p12 wallet file.`r`n") } } catch {}
+            try { if ($UnlockUIAction) { $UnlockUIAction.Invoke() } } catch {}
+            return
         }
-    } else {
-        $AppendLog.Invoke("SSH key authorized for '$newUser'.`r`n")
-    }
 
-    $AppendLog.Invoke("Testing login for new user '$newUser'...`r`n")
-    $testExit = 1
-    $useKey = (-not [string]::IsNullOrEmpty($KeyBox.Text))
+        try { if ($P12PasswordBox) { $ui_p12Pass = $P12PasswordBox.Password } } catch { $ui_p12Pass = "" }
+        if ([string]::IsNullOrWhiteSpace($ui_p12Pass)) {
+            try {
+                [System.Windows.MessageBox]::Show(
+                    $MainWindow,
+                    "Please enter your P12 passphrase in the P12 Upload section before starting setup.",
+                    "P12 Passphrase Required",
+                    [System.Windows.MessageBoxButton]::OK,
+                    [System.Windows.MessageBoxImage]::Warning
+                ) | Out-Null
+            } catch {}
+            try { if ($script:AppendLog) { $script:AppendLog.Invoke("[ERROR] Upload P12 is enabled, but P12 Passphrase is blank.`r`n") } } catch {}
+            try { if ($UnlockUIAction) { $UnlockUIAction.Invoke() } } catch {}
+            return
+        }
 
-    if ($useKey -and (Test-Path $KeyBox.Text)) {
-        $testArgs = "-batch -ssh -P $($PortBox.Text.Trim()) -i `"$($KeyBox.Text)`" -l $newUser `"echo OK`""
-        $psiTest = New-Object System.Diagnostics.ProcessStartInfo -Property @{
-            FileName = $global:PlinkPath
-            Arguments = $testArgs
-            UseShellExecute = $false
-            RedirectStandardOutput = $true
-            RedirectStandardError = $true
-            CreateNoWindow = $true
-        }
-        $procTest = New-Object System.Diagnostics.Process
-        $procTest.StartInfo = $psiTest
-        $out = New-Object System.Text.StringBuilder
-        $err = New-Object System.Text.StringBuilder
-        $procTest.add_OutputDataReceived({ if ($_.Data) { $out.AppendLine($_.Data) } })
-        $procTest.add_ErrorDataReceived({ if ($_.Data) { $err.AppendLine($_.Data) } })
-        $procTest.Start() | Out-Null
-        $procTest.BeginOutputReadLine()
-        $procTest.BeginErrorReadLine()
-        $procTest.WaitForExit()
-        $testExit = $procTest.ExitCode
-        if ($out.Length -gt 0) {
-            $AppendLog.Invoke("New user output: $($out.ToString().Trim())`r`n")
-        }
-        if ($err.Length -gt 0) {
-            $AppendLog.Invoke("[ERROR] $($err.ToString().Trim())`r`n")
-        }
-    } elseif (-not [string]::IsNullOrEmpty($newPass)) {
-        $AppendLog.Invoke("(Using password authentication for test)`r`n")
-        $testArgs = "-batch -ssh -P $($PortBox.Text.Trim()) -l $newUser -pw `"$($newPass)`" `"echo OK`""
-        $psiTest = New-Object System.Diagnostics.ProcessStartInfo -Property @{
-            FileName = $global:PlinkPath
-            Arguments = $testArgs
-            UseShellExecute = $false
-            RedirectStandardOutput = $true
-            RedirectStandardError = $true
-            CreateNoWindow = $true
-        }
-        $procTest = New-Object System.Diagnostics.Process
-        $procTest.StartInfo = $psiTest
-        $out = New-Object System.Text.StringBuilder
-        $err = New-Object System.Text.StringBuilder
-        $procTest.add_OutputDataReceived({ if ($_.Data) { $out.AppendLine($_.Data) } })
-        $procTest.add_ErrorDataReceived({ if ($_.Data) { $err.AppendLine($_.Data) } })
-        $procTest.Start() | Out-Null
-        $procTest.BeginOutputReadLine()
-        $procTest.BeginErrorReadLine()
-        $procTest.WaitForExit()
-        $testExit = $procTest.ExitCode
-        if ($out.Length -gt 0) {
-            $AppendLog.Invoke("New user output: $($out.ToString().Trim())`r`n")
-        }
-        if ($err.Length -gt 0) {
-            $AppendLog.Invoke("[ERROR] $($err.ToString().Trim())`r`n")
-        }
-    } else {
-        $AppendLog.Invoke("[WARN] No key or password available to test new user login.`r`n")
-        $testExit = 1
-    }
+        try {
+            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+            $cert.Import($ui_p12Path, $ui_p12Pass, 'Exportable')
 
-    if ($testExit -eq 0) {
-        $AppendLog.Invoke("New user '$newUser' login test successful.`r`n")
-    } else {
-        $AppendLog.Invoke("[ERROR] New user '$newUser' login test failed. Root login will not be disabled.`r`n")
-        $DisableRootCheck.IsChecked = $false
-    }
-
-    if ($DisableRootCheck.IsChecked -and $DisableRootCheck.IsChecked.Value -and $testExit -eq 0) {
-        $AppendLog.Invoke("Disabling root SSH login and global password auth...`r`n")
-        $cmdDisableRoot = @"
-bash -c '
-if grep -q "^[#[:space:]]*PermitRootLogin" /etc/ssh/sshd_config; then
-sed -i "s/^[#[:space:]]*PermitRootLogin.*/PermitRootLogin no/" /etc/ssh/sshd_config;
-else
-echo "PermitRootLogin no" >> /etc/ssh/sshd_config;
-fi;
-if grep -q "^[#[:space:]]*PasswordAuthentication" /etc/ssh/sshd_config; then
-sed -i "s/^[#[:space:]]*PasswordAuthentication.*/PasswordAuthentication no/" /etc/ssh/sshd_config;
-else
-echo "PasswordAuthentication no" >> /etc/ssh/sshd_config;
-fi'
-"@
-        $exitCode = Run-RemoteCommand -cmd $cmdDisableRoot
-        if ($exitCode -ne 0) {
-            $AppendLog.Invoke("[ERROR] Failed to update sshd_config for PermitRootLogin/PasswordAuthentication.`r`n")
-        } else {
-            $AppendLog.Invoke("Root login and password auth disabled in sshd_config.`r`n")
-            $exitCode = Run-RemoteCommand -cmd "bash -c 'which systemctl >/dev/null 2>&1 && (systemctl reload sshd || systemctl reload ssh) || service ssh reload'"
-            if ($exitCode -ne 0) {
-                $AppendLog.Invoke("[WARN] SSH reload failed; you may need to restart SSH manually.`r`n")
+            if (-not [string]::IsNullOrWhiteSpace($cert.FriendlyName)) {
+                $ui_p12Alias = $cert.FriendlyName
+                try { if ($script:AppendLog) { $script:AppendLog.Invoke("[INFO] P12 alias detected locally (friendlyName): $ui_p12Alias`r`n") } } catch {}
             } else {
-                $AppendLog.Invoke("SSH service reloaded to apply new configuration.`r`n")
+                $ui_p12Alias = ""
+                try { if ($script:AppendLog) { $script:AppendLog.Invoke("[WARN] P12 passphrase validated, but no friendlyName/alias was found. Upload will continue.`r`n") } } catch {}
             }
+
+            try {
+                $ui_p12NodeId = Get-NodeIdFromP12Local -P12Path $ui_p12Path -P12Pass $ui_p12Pass
+
+                if ($ui_p12NodeId -match '^[0-9a-f]{128}$') {
+
+                    $shortId = Get-ShortNodeId $ui_p12NodeId
+
+                    try {
+                        if ($script:AppendLog) {
+                            $script:AppendLog.Invoke("__GUIONLY__Node ID extraction successful...`r`n")
+                            if ($shortId) {
+                                $script:AppendLog.Invoke("__GUIONLY__Short ID: $shortId`r`n")
+                            }
+                        }
+                    } catch {}
+
+                } else {
+
+                    $ui_p12NodeId = ""
+                    try { if ($script:AppendLog) { $script:AppendLog.Invoke("[WARN] Node ID could not be extracted locally (unexpected key type or format).`r`n") } } catch {}
+                }
+
+            } catch {
+                $ui_p12NodeId = ""
+                try { if ($script:AppendLog) { $script:AppendLog.Invoke("[WARN] Local Node ID extraction crashed: $($_.Exception.Message)`r`n") } } catch {}
+            }
+
+            try { $script:LastValidatedP12Alias = $ui_p12Alias } catch {}
+            try { if ($script:AppendLog) { $script:AppendLog.Invoke("[INFO] P12 passphrase validated locally. Upload will proceed.`r`n") } } catch {}
+
+        } catch {
+            try { if ($script:AppendLog) { $script:AppendLog.Invoke("[ERROR] P12 passphrase is incorrect (or P12 is invalid).`r`n") } } catch {}
+            try {
+                [System.Windows.MessageBox]::Show(
+                    $MainWindow,
+                    "The P12 passphrase appears to be incorrect (or the P12 file is invalid).`r`n`r`nPlease re-enter the correct passphrase and try again.",
+                    "P12 Passphrase Incorrect",
+                    [System.Windows.MessageBoxButton]::OK,
+                    [System.Windows.MessageBoxImage]::Error
+                ) | Out-Null
+            } catch {}
+            try { if ($UnlockUIAction) { $UnlockUIAction.Invoke() } } catch {}
+            return
         }
     }
 
-    $AppendLog.Invoke("Setup process complete.`r`n")
-}
+    # -------------------------
+    # Ensure ssh-agent prestart
+    # -------------------------
+    if (-not (Ensure-SshAgentSessionPreStart -KeyPath $ui_keyPath -Passphrase $ui_pass)) {
+        try { if ($script:AppendLog) { $script:AppendLog.Invoke("[FATAL] Cannot continue without enabling ssh-agent for encrypted key automation.`r`n") } } catch {}
+        try { if ($UnlockUIAction) { $UnlockUIAction.Invoke() } } catch {}
+        return
+    }
 
-$Window.add_Closed({
-    Cleanup-AgentOwnedKeys
+    # Agent pubkey will be collected in the worker AFTER ssh-add runs
+    $ui_agentPubKey = ""
+
+    try { if ($script:AppendLog) { $script:AppendLog.Invoke("[INFO] Start clicked. Launching background setup...`r`n") } } catch {}
+
+    try {
+        $script:TaskResult.ServerHost = ""
+        $script:TaskResult.SshPort    = ""
+        $script:TaskResult.User       = ""
+        $script:TaskResult.Key        = ""
+        $script:TaskResult.Prompt     = 0
+        $script:TaskResult.RootDisabled = 0
+
+        $script:TaskResult.StatusTitle   = ""
+        $script:TaskResult.StatusMessage = ""
+        $script:TaskResult.StatusIcon    = "Information"
+        $script:TaskResult.ShowStatus    = 0
+
+        $script:TaskResult.P12Alias      = ""
+        $script:TaskResult.P12RemotePath = ""
+        $script:TaskResult.P12LocalPath  = ""
+        $script:TaskResult.P12NodeId     = ""
+        $script:TaskResult.ShowP12Alias  = 0
+    } catch {}
+
+    $ui_createNonRoot = $false
+    try { $ui_createNonRoot = ($CreateNonRootCheck -and ($CreateNonRootCheck.IsChecked -eq $true)) } catch {}
+
+    # -------------------------
+    # Worker context
+    # -------------------------
+    $ctx = @{
+        ui_serverHost         = $ui_serverHost
+        ui_port               = $ui_port
+        ui_user               = $ui_user
+        ui_pass               = $ui_pass
+        ui_keyPath            = $ui_keyPath
+        ui_newUser            = $ui_newUser
+        ui_newPass            = $ui_newPass
+        ui_disableRootChecked = $ui_disableRootChecked
+
+        ui_createNonRoot      = $ui_createNonRoot
+
+        ui_uploadP12          = $ui_uploadP12
+        ui_p12Path            = $ui_p12Path
+        ui_p12Pass            = $ui_p12Pass
+        ui_p12Alias           = $ui_p12Alias
+        ui_p12NodeId          = $ui_p12NodeId
+        ui_agentPubKey        = $ui_agentPubKey
+
+        TaskResult            = $script:TaskResult
+    }
+
+    # -------------------------
+    # Launch background worker (FULL logic inside)
+    # -------------------------
+    $task = Invoke-BackgroundUI -Context $ctx -Work {
+
+        function Safe-AppendLog {
+            param([string]$t)
+            try { if ($AppendLog) { $AppendLog.Invoke($t) } } catch {}
+        }
+
+        try {
+            Add-Content -Path $ServerToolkitLogPath -Value ("WORKER_ENTERED " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") + "`r`n") -Encoding UTF8 -ErrorAction SilentlyContinue
+        } catch {}
+
+        try {
+            Safe-AppendLog "=== StartButton clicked at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ===`r`n"
+
+            $serverHost = $ui_serverHost
+            $port       = $ui_port
+            $user       = $ui_user
+            $pass       = $ui_pass
+            $keyPath    = $ui_keyPath
+            $newUser    = $ui_newUser
+            $newPass    = $ui_newPass
+
+            $disableRootChecked = ($ui_disableRootChecked -eq $true)
+            $doCreateNonRoot    = ($ui_createNonRoot -eq $true)
+
+            $doP12 = ($ui_uploadP12 -eq $true)
+            $p12LocalPath = $ui_p12Path
+            $p12Alias     = $ui_p12Alias
+            $p12NodeId    = $ui_p12NodeId
+
+            try {
+                if ($TaskResult) {
+                    $TaskResult.ServerHost = $serverHost
+                    $TaskResult.SshPort    = $port
+                    $TaskResult.User       = $user
+                    $TaskResult.Key        = $keyPath
+                    $TaskResult.Prompt     = 1
+                }
+            } catch {}
+
+            if ([string]::IsNullOrWhiteSpace($serverHost) -or [string]::IsNullOrWhiteSpace($user) -or [string]::IsNullOrWhiteSpace($port)) {
+                Safe-AppendLog "[ERROR] Host, Port, and Username are required fields.`r`n"
+                return
+            }
+            if ($port -notmatch '^\d+$') {
+                Safe-AppendLog "[ERROR] Port must be a number.`r`n"
+                return
+            }
+
+            if ([string]::IsNullOrWhiteSpace($newUser)) {
+                if ($user -eq "root") { $newUser = "nodeadmin" } else { $newUser = $user }
+            }
+
+            Reset-HostKeysForServer -HostName $serverHost -Port $port
+
+            $authMode = "password"
+            if (-not [string]::IsNullOrWhiteSpace($keyPath)) { $authMode = "key" }
+
+            if ($authMode -eq "key") {
+                Safe-AppendLog "Valid OpenSSH/PEM private key detected - using as-is: $keyPath`r`n"
+                Safe-AppendLog "Using key-based authentication for $user@$serverHost (Password is treated as key passphrase).`r`n"
+
+                $agentOk = Ensure-SshAgentWithKey -KeyPath $keyPath -Passphrase $pass
+                if (-not $agentOk) {
+                    Safe-AppendLog "[INFO] Waiting for ssh-add. Then click Start Setup again.`r`n"
+                    return
+                }
+            } else {
+                Safe-AppendLog "Using password-based authentication for $user@$serverHost.`r`n"
+                if (-not (Ensure-PuttyTools)) {
+                    Safe-AppendLog "[FATAL] plink.exe required for password-only mode.`r`n"
+                    return
+                }
+            }
+
+            function Run-RemoteCommand {
+                param([string]$cmd, [int]$TimeoutMs = 60000, [string]$StdinText = $null)
+
+                if ($authMode -eq "key") {
+                    return (Run-SshCommand -RemoteCommand $cmd -RemoteHost $serverHost -Port $port -User $user -KeyPath $keyPath -TimeoutMs $TimeoutMs -StdinText $StdinText)
+                } else {
+                    $args = "-batch -ssh -P $port"
+                    if (-not [string]::IsNullOrWhiteSpace($pass)) { $args += " -pw `"$pass`"" }
+                    $args += " -l $user $serverHost `"$cmd`""
+
+                    $psi = New-Object System.Diagnostics.ProcessStartInfo
+                    $psi.FileName = $global:PlinkPath
+                    $psi.Arguments = $args
+                    $psi.UseShellExecute = $false
+                    $psi.RedirectStandardOutput = $true
+                    $psi.RedirectStandardError  = $true
+                    $psi.CreateNoWindow = $true
+
+                    $p = New-Object System.Diagnostics.Process
+                    $p.StartInfo = $psi
+                    $null = $p.Start()
+                    $p.WaitForExit()
+
+                    $o = ""
+                    $e = ""
+                    try { $o = $p.StandardOutput.ReadToEnd() } catch {}
+                    try { $e = $p.StandardError.ReadToEnd() } catch {}
+
+                    if ($e) {
+                        foreach ($ln in ($e -split "`r?`n")) { if ($ln) { Safe-AppendLog "[ERROR] $ln`r`n" } }
+                    }
+                    if ($o) {
+                        foreach ($ln in ($o -split "`r?`n")) { if ($ln) { Safe-AppendLog "$ln`r`n" } }
+                    }
+
+                    return $p.ExitCode
+                }
+            }
+
+            Safe-AppendLog "Connecting to $serverHost on port $port using OpenSSH...`r`n"
+            $probeExit = Run-RemoteCommand -cmd "echo CONNECTED" -TimeoutMs 8000
+            if ($probeExit -ne 0) {
+                Safe-AppendLog "[FATAL] SSH connection failed. Aborting.`r`n"
+                return
+            }
+
+            if ($doCreateNonRoot) {
+
+                Safe-AppendLog "Checking whether user '$newUser' already exists...`r`n"
+                $existsExit = Run-RemoteCommand -cmd "bash -lc 'id $newUser >/dev/null 2>&1'" -TimeoutMs 8000
+
+                if ($existsExit -ne 0) {
+                    Safe-AppendLog "Creating '$newUser' user...`r`n"
+                    $cExit = Run-RemoteCommand -cmd "bash -lc 'timeout 10 useradd -m -s /bin/bash $newUser'" -TimeoutMs 20000
+                    if ($cExit -ne 0) {
+                        Safe-AppendLog "[FATAL] Failed to create user '$newUser'. Aborting.`r`n"
+                        return
+                    }
+                    Safe-AppendLog "User '$newUser' created successfully.`r`n"
+                } else {
+                    Safe-AppendLog "[WARN] User '$newUser' already exists on this server.`r`n"
+                }
+
+                Safe-AppendLog "Adding '$newUser' to sudo group...`r`n"
+                $gExit = Run-RemoteCommand -cmd "bash -lc 'timeout 10 usermod -aG sudo $newUser'" -TimeoutMs 20000
+                if ($gExit -ne 0) {
+                    Safe-AppendLog "[FATAL] Failed to add user '$newUser' to sudo group. Aborting.`r`n"
+                    return
+                }
+                Safe-AppendLog "User '$newUser' is now in sudo group.`r`n"
+
+                Safe-AppendLog "Ensuring home directory and SSH permissions...`r`n"
+                $hExit = Run-RemoteCommand -cmd "bash -lc 'set -e; u=$newUser; mkdir -p /home/$newUser/.ssh; chown -R ${newUser}:$newUser /home/$newUser; chmod 700 /home/$newUser/.ssh'" -TimeoutMs 20000
+                if ($hExit -ne 0) {
+                    Safe-AppendLog "[FATAL] Failed to ensure home/ssh permissions for '$newUser'. Aborting.`r`n"
+                    return
+                }
+
+                if (-not [string]::IsNullOrWhiteSpace($newPass)) {
+                    Safe-AppendLog "Setting password for '$newUser'...`r`n"
+                    $pair = "$newUser`:$newPass"
+                    $b64  = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($pair))
+                    $pExit = Run-RemoteCommand -cmd "bash -lc `"echo $b64 | base64 -d | chpasswd`"" -TimeoutMs 180000
+                    if ($pExit -ne 0) {
+                        Safe-AppendLog "[FATAL] Failed to set password for '$newUser'. Aborting.`r`n"
+                        return
+                    }
+                    Safe-AppendLog "Password set for '$newUser'.`r`n"
+                }
+
+                Safe-AppendLog "Authorizing SSH key for '$newUser' (agent pubkey -> authorized_keys)...`r`n"
+
+                $kExit = 1
+                $agentPubKey = ""
+
+                try {
+                    $sshAddExe2 = Join-Path $env:WINDIR "System32\OpenSSH\ssh-add.exe"
+                    if (-not (Test-Path $sshAddExe2)) {
+                        try { $sshAddExe2 = (Get-Command ssh-add -ErrorAction Stop).Source } catch { $sshAddExe2 = $null }
+                    }
+
+                    if ($sshAddExe2) {
+                        $pubs2 = & $sshAddExe2 -L 2>$null
+                        foreach ($ln2 in ($pubs2 -split "`r?`n")) {
+                            if ($ln2 -and $ln2 -match '^(ssh-(rsa|ed25519)|ecdsa-sha2-nistp\d+)\s+') {
+                                $agentPubKey = $ln2.Trim()
+                                break
+                            }
+                        }
+                    }
+                } catch {
+                    $agentPubKey = ""
+                }
+
+                if (-not [string]::IsNullOrWhiteSpace($agentPubKey)) {
+
+                    $pubB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($agentPubKey))
+
+                    $cmdAuth = "bash -lc 'set -e; u=$newUser; " +
+                            "mkdir -p /home/$newUser/.ssh; " +
+                            "printf %s $pubB64 | base64 -d > /home/$newUser/.ssh/authorized_keys; " +
+                            "chown -R ${newUser}:$newUser /home/$newUser/.ssh; " +
+                            "chmod 700 /home/$newUser/.ssh; " +
+                            "chmod 600 /home/$newUser/.ssh/authorized_keys; " +
+                            "echo AUTH_KEYS_WRITTEN'"
+
+                    $kExit = Run-RemoteCommand -cmd $cmdAuth -TimeoutMs 20000
+
+                } else {
+
+                    Safe-AppendLog "[FATAL] Could not read a public key from ssh-agent after unlock. Aborting.`r`n"
+                    return
+                }
+
+                if ($kExit -ne 0) {
+                    Safe-AppendLog "[FATAL] Failed to authorize SSH key for '$newUser'. Aborting.`r`n"
+                    return
+                }
+
+                Safe-AppendLog "SSH key authorized for '$newUser'.`r`n"
+
+                Safe-AppendLog "Testing login for new user '$newUser'...`r`n"
+                if ($authMode -eq "key") {
+                    $testExit = (Run-SshCommand -RemoteCommand "echo OK" -RemoteHost $serverHost -Port $port -User $newUser -KeyPath $keyPath -TimeoutMs 8000)
+                    if ($testExit -ne 0) {
+                        Safe-AppendLog "[FATAL] New user '$newUser' login test failed. Aborting.`r`n"
+                        return
+                    }
+                }
+                Safe-AppendLog "New user '$newUser' login test successful.`r`n"
+
+                if ($disableRootChecked -and $user -eq "root") {
+                    Safe-AppendLog "Disabling root SSH login and global password auth...`r`n"
+
+                    $cmdDisableRoot = @"
+bash -lc '
+set -e
+mkdir -p /etc/ssh/sshd_config.d
+cat >/etc/ssh/sshd_config.d/99-server-toolkit.conf <<EOF
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+EOF
+sshd -t
+( sleep 1; systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null || true ) >/dev/null 2>&1 &
+exit 0
+'
+"@
+                    $dExit = Run-RemoteCommand -cmd $cmdDisableRoot -TimeoutMs 20000
+                    if ($dExit -ne 0) {
+                        Safe-AppendLog "[FATAL] Failed to disable root login. Aborting.`r`n"
+                        return
+                    }
+
+                    try { if ($TaskResult) { $TaskResult.RootDisabled = 1 } } catch {}
+
+                    Safe-AppendLog "Root login and password authentication disabled.`r`n"
+                }
+
+                Safe-AppendLog "[INFO] Switching operations to '$newUser' for non-root tasks...`r`n"
+                $user = $newUser
+                try { if ($TaskResult) { $TaskResult.User = $user } } catch {}
+            }
+
+            # -------------------------
+            # P12 Upload (optional)
+            # -------------------------
+            $remoteP12Path = ""
+            if ($doP12) {
+
+                Safe-AppendLog "[INFO] Upload P12 enabled. Starting secure upload...`r`n"
+
+                $p12Leaf = (Split-Path -Leaf $p12LocalPath)
+                $homeDirResolved = if ($user -eq "root") { "/root" } else { "/home/$user" }
+                $remoteP12Path = "$homeDirResolved/$p12Leaf"
+
+                $existsExit = 1
+                if ($authMode -eq "key") {
+                    $existsExit = (Run-SshCommand -RemoteCommand "bash -lc 'test -f ""$remoteP12Path""'" -RemoteHost $serverHost -Port $port -User $user -KeyPath $keyPath -TimeoutMs 8000)
+                } else {
+                    $existsExit = Run-RemoteCommand -cmd "bash -lc 'test -f ""$remoteP12Path""'" -TimeoutMs 8000
+                }
+
+                if ($existsExit -eq 0 -and $P12OverwritePromptFunc) {
+                    $evt = New-Object System.Threading.ManualResetEventSlim($false)
+                    $box = [hashtable]::Synchronized(@{ Decision = "skip" })
+
+                    $uiAsk = [Action]{
+                        try { $box.Decision = $P12OverwritePromptFunc.Invoke($remoteP12Path, $p12LocalPath) } catch { $box.Decision = "skip" }
+                        try { $evt.Set() } catch {}
+                    }
+
+                    try { $null = $UiDispatcher.BeginInvoke($uiAsk) } catch { try { $uiAsk.Invoke() } catch {} }
+                    try { $null = $evt.Wait([TimeSpan]::FromMinutes(5)) } catch {}
+
+                    if ($box.Decision -eq "skip") {
+                        Safe-AppendLog "[INFO] Remote P12 exists. Skipping P12 handling and continuing setup.`r`n"
+                        $doP12 = $false
+                    }
+                    elseif ($box.Decision -eq "backup") {
+                        Safe-AppendLog "[INFO] Remote P12 exists. Creating backup before overwrite...`r`n"
+                        Run-RemoteCommand -cmd "bash -lc 'set -e; ts=$(date +%Y%m%d-%H%M%S); cp ""$remoteP12Path"" ""$remoteP12Path.bak-$ts"" || true'" -TimeoutMs 20000 | Out-Null
+                    }
+                }
+
+                if ($doP12) {
+
+                    if ($authMode -eq "key") {
+                        $scpExe = Join-Path $env:WINDIR "System32\OpenSSH\scp.exe"
+                        if (-not (Test-Path $scpExe)) {
+                            try { $scpExe = (Get-Command scp -ErrorAction Stop).Source } catch { $scpExe = $null }
+                        }
+                        if (-not $scpExe) {
+                            Safe-AppendLog "[FATAL] scp.exe not found. Cannot upload P12.`r`n"
+                            return
+                        }
+
+                        $knownHostsPath = Join-Path $env:USERPROFILE ".ssh\known_hosts"
+                        $scpArgs = @(
+                            "-P", $port,
+                            "-o", "StrictHostKeyChecking=accept-new",
+                            "-o", "UserKnownHostsFile=$knownHostsPath",
+                            "-o", "GlobalKnownHostsFile=NUL"
+                        )
+                        if ($keyPath) { $scpArgs += @("-i", "`"$keyPath`"") }
+
+                        $scpArgs += @(
+                            "`"$p12LocalPath`"",
+                            "${user}@${serverHost}:$remoteP12Path"
+                        )
+
+                        Safe-AppendLog "[INFO] Uploading P12 via SCP as '$user'...`r`n"
+                        $psi = New-Object System.Diagnostics.ProcessStartInfo
+                        $psi.FileName = $scpExe
+                        $psi.Arguments = ($scpArgs -join " ")
+                        $psi.UseShellExecute = $false
+                        $psi.RedirectStandardError = $true
+                        $psi.RedirectStandardOutput = $true
+                        $psi.CreateNoWindow = $true
+
+                        $proc = New-Object System.Diagnostics.Process
+                        $proc.StartInfo = $psi
+                        $proc.Start() | Out-Null
+                        $proc.WaitForExit()
+
+                        if ($proc.ExitCode -ne 0) {
+                            $err = ""
+                            try { $err = $proc.StandardError.ReadToEnd() } catch {}
+                            Safe-AppendLog "[FATAL] P12 upload failed: $err`r`n"
+                            return
+                        }
+
+                        Safe-AppendLog "[INFO] P12 uploaded to: $remoteP12Path`r`n"
+                    }
+                    else {
+                        if (-not $global:PscpPath -or -not (Test-Path $global:PscpPath)) {
+                            Safe-AppendLog "[FATAL] pscp.exe not found. Cannot upload P12 in password mode.`r`n"
+                            return
+                        }
+
+                        Safe-AppendLog "[INFO] Uploading P12 via PSCP as '$user' (password mode)...`r`n"
+
+                        $pscpArgs = @("-batch","-scp","-P",$port)
+                        $pscpArgs += @("-pw","`"$newPass`"","`"$p12LocalPath`"","${user}@${serverHost}:$remoteP12Path")
+
+                        $psi = New-Object System.Diagnostics.ProcessStartInfo
+                        $psi.FileName = $global:PscpPath
+                        $psi.Arguments = ($pscpArgs -join " ")
+                        $psi.UseShellExecute = $false
+                        $psi.RedirectStandardError = $true
+                        $psi.RedirectStandardOutput = $true
+                        $psi.CreateNoWindow = $true
+
+                        $proc = New-Object System.Diagnostics.Process
+                        $proc.StartInfo = $psi
+                        $proc.Start() | Out-Null
+                        $proc.WaitForExit()
+
+                        if ($proc.ExitCode -ne 0) {
+                            $err = ""
+                            try { $err = $proc.StandardError.ReadToEnd() } catch {}
+                            Safe-AppendLog "[FATAL] P12 upload failed (pscp): $err`r`n"
+                            return
+                        }
+
+                        Safe-AppendLog "[INFO] P12 uploaded to: $remoteP12Path`r`n"
+                    }
+
+                    $chmodExit = Run-RemoteCommand -cmd "bash -lc 'chmod 600 ""$remoteP12Path""'" -TimeoutMs 20000
+                    if ($chmodExit -ne 0) {
+                        Safe-AppendLog "[FATAL] Failed to set permissions on: $remoteP12Path`r`n"
+                        return
+                    }
+
+                    Safe-AppendLog "[INFO] P12 installed: $remoteP12Path`r`n"
+
+                    try {
+                        if ($TaskResult) {
+                            $TaskResult.P12RemotePath = $remoteP12Path
+                            $TaskResult.P12LocalPath  = $p12LocalPath
+                            $TaskResult.P12Alias      = $p12Alias
+                            $TaskResult.P12NodeId     = ""
+                            if (-not [string]::IsNullOrWhiteSpace($p12NodeId)) { $TaskResult.P12NodeId = $p12NodeId }
+                            $TaskResult.ShowP12Alias  = 1
+                        }
+                    } catch {}
+                }
+            }
+
+            # ----------------------------------------------------------
+            # Setup complete (end)
+            # ----------------------------------------------------------
+            try {
+                if ($doP12 -eq $true) {
+                    Safe-AppendLog "[INFO] Setup complete - P12 upload successful.`r`n"
+                } else {
+                    Safe-AppendLog "[INFO] Setup complete.`r`n"
+                }
+            } catch {}
+
+            try {
+                if ($TaskResult) {
+                    $TaskResult.ServerHost = $serverHost
+                    $TaskResult.SshPort    = $port
+                    $TaskResult.User       = $user
+                    $TaskResult.Key        = $keyPath
+                    $TaskResult.Prompt     = 1
+                }
+            } catch {}
+
+        } catch {
+            Safe-AppendLog "[FATAL] Background task crashed: $($_.Exception.Message)`r`n"
+            if ($_.ScriptStackTrace) { Safe-AppendLog "[FATAL] Stack:`r`n$($_.ScriptStackTrace)`r`n" }
+        }
+
+        try {
+            Add-Content -Path $ServerToolkitLogPath -Value ("WORKER_FINALLY_REACHED " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") + "`r`n") -Encoding UTF8 -ErrorAction SilentlyContinue
+        } catch {}
+    }
+
+    # -------------------------
+    # After worker started
+    # -------------------------
+    if (-not $task) {
+        try { if ($script:AppendLog) { $script:AppendLog.Invoke("[FATAL] Background setup did not start. Re-enabling UI.`r`n") } } catch {}
+        try { if ($UnlockUIAction) { $UnlockUIAction.Invoke() } } catch {}
+        return
+    }
+
+    try { if ($script:AppendLog) { $script:AppendLog.Invoke("[INFO] Background task started. TaskId=$($task.Id) Status=$($task.Status)`r`n") } } catch {}
+    try { $script:ActiveTask = $task } catch {}
+    try { Start-TaskWatchTimer -Task $task } catch {}
+
 })
 
-$null = $Window.ShowDialog()
+
+$MainWindow.add_Closing({
+    param($sender, $e)
+
+    try {
+        if ($script:IsBackgroundRunning) {
+
+            $e.Cancel = $true
+
+            try {
+                Add-Content -Path $global:ServerToolkitLogPath `
+                    -Value ((Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") + " [WARN] Close requested while background task is running.") `
+                    -Encoding UTF8 -ErrorAction SilentlyContinue
+            } catch {}
+
+            $msg = @()
+            $msg += "Setup is still running."
+            $msg += ""
+            $msg += "Do you want to FORCE STOP the running task and close Server Toolkit?"
+            $msg += ""
+            $msg += "Yes  = Stop + Close"
+            $msg += "No   = Keep running"
+
+            $res = [System.Windows.MessageBox]::Show(
+                $MainWindow,
+                ($msg -join "`r`n"),
+                "Close while running?",
+                [System.Windows.MessageBoxButton]::YesNo,
+                [System.Windows.MessageBoxImage]::Warning
+            )
+
+            if ($res -eq [System.Windows.MessageBoxResult]::Yes) {
+
+                try { Stop-ActiveBackgroundTask -Reason "user-close" } catch {}
+                try { Signal-SshAgentSessionEnd } catch {}
+
+                $e.Cancel = $false
+                return
+            }
+
+            return
+        }
+
+        try { Signal-SshAgentSessionEnd } catch {}
+    } catch {}
+})
+
+$MainWindow.add_Closed({
+    try { Signal-SshAgentSessionEnd } catch {}
+    try { Cleanup-AgentOwnedKeys } catch {}
+})
+
+try {
+    Register-EngineEvent -SourceIdentifier "ServerToolkit_Exiting" -InputObject ([AppDomain]::CurrentDomain) -EventName "ProcessExit" -Action {
+        try { Cleanup-AgentOwnedKeys } catch {}
+    } | Out-Null
+} catch {}
+
+try {
+
+    Add-Content -Path $global:ServerToolkitLogPath `
+        -Value ("DEBUG: Launching MainWindow via ShowDialog() (clean)" + "`r`n") `
+        -Encoding UTF8 -ErrorAction SilentlyContinue
+
+    $MainWindow.WindowState   = [System.Windows.WindowState]::Normal
+    $MainWindow.ShowInTaskbar = $true
+    $MainWindow.Topmost       = $false
+
+    # ==========================================================
+    # STARTUP WATCHDOG (prevents hidden/stuck powershell launches)
+    # If window doesn't render within 12s, log + force exit.
+    # ==========================================================
+    $script:StartupWatchdogTimer = $null
+    $script:StartupWatchdogArmed = $true
+
+    try {
+        $script:StartupWatchdogTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $script:StartupWatchdogTimer.Interval = [TimeSpan]::FromSeconds(12)
+
+        $script:StartupWatchdogTimer.Add_Tick({
+            try { $script:StartupWatchdogTimer.Stop() } catch {}
+            if (-not $script:StartupWatchdogArmed) { return }
+
+            try {
+                Add-Content -Path $global:ServerToolkitLogPath -Value (
+                    (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") +
+                    " [FATAL] STARTUP_WATCHDOG_TIMEOUT: window did not render within 12 seconds. Forcing process exit.`r`n"
+                ) -Encoding UTF8 -ErrorAction SilentlyContinue
+            } catch {}
+
+            try { [Environment]::Exit(86) } catch {}
+            try { Stop-Process -Id $PID -Force } catch {}
+        })
+
+        $script:StartupWatchdogTimer.Start() | Out-Null
+    } catch {}
+
+    try {
+        $MainWindow.Add_ContentRendered({
+            try { $script:StartupWatchdogArmed = $false } catch {}
+            try { if ($script:StartupWatchdogTimer) { $script:StartupWatchdogTimer.Stop() } } catch {}
+            try {
+                Add-Content -Path $global:ServerToolkitLogPath -Value (
+                    (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") +
+                    " DEBUG: ContentRendered fired; startup watchdog disarmed.`r`n"
+                ) -Encoding UTF8 -ErrorAction SilentlyContinue
+            } catch {}
+        }) | Out-Null
+    } catch {}
+
+    $null = $MainWindow.ShowDialog()
+
+} catch {
+
+    try {
+        Add-Content -Path $global:ServerToolkitLogPath `
+            -Value ("[FATAL] Window start failed: " + $_.Exception.ToString() + "`r`n") `
+            -Encoding UTF8 -ErrorAction SilentlyContinue
+    } catch {}
+
+    try {
+        Add-Type -AssemblyName PresentationFramework -ErrorAction SilentlyContinue
+        [System.Windows.MessageBox]::Show(
+            "Server Toolkit failed to start.`r`n`r`n" +
+            "See log:`r`n$global:ServerToolkitLogPath`r`n`r`n" +
+            $_.Exception.ToString(),
+            "Server Toolkit Error",
+            [System.Windows.MessageBoxButton]::OK,
+            [System.Windows.MessageBoxImage]::Error
+        ) | Out-Null
+    } catch {}
+
+    throw
+}
