@@ -215,6 +215,42 @@ Add-Type -AssemblyName System.Xaml
             </Setter>
         </Style>
 
+        <!-- Global ToggleButton theme override (dark) -->
+        <Style TargetType="ToggleButton">
+            <Setter Property="Background" Value="#2f3238" />
+            <Setter Property="Foreground" Value="#f0f0f0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                            VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#25272b" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#25272b" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#25272b" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="Menu">
             <Setter Property="Background" Value="#262a30" />
             <Setter Property="Foreground" Value="{StaticResource TextFg}" />
@@ -385,8 +421,19 @@ Add-Type -AssemblyName System.Xaml
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
-                        <TextBox x:Name="UserBox" Grid.Column="0" Width="173" HorizontalAlignment="Left"/>
-
+                        <TextBox x:Name="UserBox" Grid.Column="0" Width="173" HorizontalAlignment="Left" CharacterCasing="Lower">
+                            <TextBox.ToolTip>
+                                <ToolTip>
+                                    <TextBlock TextWrapping="Wrap" Width="300">
+Ubuntu username rules:
+* Must start with a lowercase letter (a-z)
+* Allowed: a-z, 0-9, underscore (_), hyphen (-)
+* No spaces, dots, or uppercase
+* Max 32 characters
+                                    </TextBlock>
+                                </ToolTip>
+                            </TextBox.ToolTip>
+                        </TextBox>
                         <!-- Hidden until Connection inputs are valid -->
                         <Button x:Name="OpenServerButton"
                             Grid.Column="1"
@@ -402,17 +449,59 @@ Add-Type -AssemblyName System.Xaml
 
                     <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,4,0">
                         <Label Content="SSH Passphrase:" HorizontalAlignment="Left" Margin="0,0,3,0"/>
-                        <TextBlock Text="&#xE72E;" FontFamily="Segoe MDL2 Assets" VerticalAlignment="Center" FontSize="14" Foreground="{StaticResource AccentBrush}">
+                        <TextBlock>
                             <TextBlock.ToolTip>
                                 <ToolTip>
-                                    <TextBlock TextWrapping="Wrap" Width="260">This field is for your SSH key passphrase.</TextBlock>
+                                    <TextBlock TextWrapping="Wrap" Width="260">
+                                        This field is for your SSH key passphrase.
+                                    </TextBlock>
                                 </ToolTip>
                             </TextBlock.ToolTip>
                         </TextBlock>
                     </StackPanel>
 
-                    <PasswordBox x:Name="PasswordBox" Grid.Row="1" Grid.Column="3" Margin="0,2" Width="173" HorizontalAlignment="Left"/>
+                    <Grid Grid.Row="1" Grid.Column="3" Margin="0,2" HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
 
+                        <!-- Source-of-truth -->
+                        <PasswordBox x:Name="PasswordBox"
+                                    Grid.Column="0"
+                                    Width="173"
+                                    HorizontalAlignment="Left"/>
+
+                        <!-- Reveal textbox -->
+                        <TextBox x:Name="PasswordRevealBox"
+                                Grid.Column="0"
+                                Width="173"
+                                HorizontalAlignment="Left"
+                                Visibility="Collapsed"/>
+
+                        <!-- Toggle reveal -->
+                        <ToggleButton x:Name="TogglePassReveal"
+                                    Grid.Column="1"
+                                    Width="28"
+                                    Height="24"
+                                    Margin="6,0,0,0"
+                                    VerticalAlignment="Center"
+                                    ToolTip="Show / hide passphrase"
+                                    Background="#2f3238"
+                                    BorderBrush="#2f3238"
+                                    BorderThickness="0"
+                                    Foreground="#f0f0f0"
+                                    Padding="4"
+                                    Cursor="Hand">
+                            <TextBlock x:Name="PassRevealIcon"
+                                    Text="&#xE890;"
+                                    FontFamily="Segoe MDL2 Assets"
+                                    FontSize="14"
+                                    Foreground="#f0f0f0"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Center"/>
+                        </ToggleButton>
+                    </Grid>
                     <Label Content="SSH Key File:" Grid.Row="2" Grid.Column="0" HorizontalAlignment="Right"/>
 
                     <!-- Fixed-width container so Browse can "come in" like the screenshot -->
@@ -459,15 +548,22 @@ Add-Type -AssemblyName System.Xaml
                                 </Grid.RowDefinitions>
 
                                 <Label Content="New Username:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center"/>
-                                <TextBox x:Name="NewUserBox" Grid.Row="0" Grid.Column="1" Margin="5,2"/>
-
+                                    <TextBox x:Name="NewUserBox" Grid.Row="0" Grid.Column="1" Margin="5,2" CharacterCasing="Lower">
+                                        <TextBox.ToolTip>
+                                            <ToolTip>
+                                                <TextBlock TextWrapping="Wrap" Width="300">
+Ubuntu username rules:
+* Must start with a lowercase letter (a-z)
+* Allowed: a-z, 0-9, underscore (_), hyphen (-)
+* No spaces, dots, or uppercase
+* Max 32 characters
+                                                </TextBlock>
+                                            </ToolTip>
+                                        </TextBox.ToolTip>
+                                    </TextBox>
                                 <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,4,0">
                                     <Label Content="Password:" VerticalAlignment="Center" Margin="0,0,3,0"/>
-                                    <TextBlock Text="&#xE72E;"
-                                            FontFamily="Segoe MDL2 Assets"
-                                            VerticalAlignment="Center"
-                                            FontSize="14"
-                                            Foreground="{StaticResource AccentBrush}">
+                                    <TextBlock>
                                         <TextBlock.ToolTip>
                                             <ToolTip>
                                                 <TextBlock TextWrapping="Wrap" Width="260">
@@ -477,7 +573,42 @@ Add-Type -AssemblyName System.Xaml
                                         </TextBlock.ToolTip>
                                     </TextBlock>
                                 </StackPanel>
-                                <PasswordBox x:Name="NewPasswordBox" Grid.Row="0" Grid.Column="3" Margin="0,2"/>
+                                <Grid Grid.Row="0" Grid.Column="3" Margin="0,2" HorizontalAlignment="Left">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Source-of-truth -->
+                                    <PasswordBox x:Name="NewPasswordBox"
+                                                Grid.Column="0"
+                                                Width="173"
+                                                HorizontalAlignment="Left"/>
+
+                                    <!-- Reveal textbox -->
+                                    <TextBox x:Name="NewPasswordRevealBox"
+                                            Grid.Column="0"
+                                            Width="173"
+                                            HorizontalAlignment="Left"
+                                            Visibility="Collapsed"/>
+
+                                    <!-- Toggle reveal -->
+                                    <ToggleButton x:Name="ToggleNewPassReveal"
+                                                Grid.Column="1"
+                                                Width="28"
+                                                Height="24"
+                                                Margin="6,0,0,0"
+                                                VerticalAlignment="Center"
+                                                ToolTip="Show / hide password">
+                                        <TextBlock x:Name="NewPassRevealIcon"
+                                                Text="&#xE890;"
+                                                FontFamily="Segoe MDL2 Assets"
+                                                FontSize="14"
+                                                Foreground="#f0f0f0"
+                                                VerticalAlignment="Center"
+                                                HorizontalAlignment="Center"/>
+                                    </ToggleButton>
+                                </Grid>
                             </Grid>
 
                             <StackPanel Orientation="Horizontal" Margin="5,6,0,0">
@@ -518,11 +649,7 @@ Add-Type -AssemblyName System.Xaml
                     <!-- Row 1: passphrase -->
                     <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                         <Label Content="P12 Passphrase:" VerticalAlignment="Center" Margin="0,0,3,0"/>
-                        <TextBlock Text="&#xE72E;"
-                                FontFamily="Segoe MDL2 Assets"
-                                VerticalAlignment="Center"
-                                FontSize="14"
-                                Foreground="{StaticResource AccentBrush}">
+                        <TextBlock>
                             <TextBlock.ToolTip>
                                 <ToolTip>
                                     <TextBlock TextWrapping="Wrap" Width="260">
@@ -532,7 +659,42 @@ Add-Type -AssemblyName System.Xaml
                             </TextBlock.ToolTip>
                         </TextBlock>
                     </StackPanel>
-                    <PasswordBox x:Name="P12PasswordBox" Grid.Row="1" Grid.Column="1" Margin="8,2" />
+                    <Grid Grid.Row="1" Grid.Column="1" Margin="8,2" HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Source-of-truth -->
+                        <PasswordBox x:Name="P12PasswordBox"
+                                    Grid.Column="0"
+                                    Width="420"
+                                    HorizontalAlignment="Left"/>
+
+                        <!-- Reveal textbox -->
+                        <TextBox x:Name="P12PasswordRevealBox"
+                                Grid.Column="0"
+                                Width="420"
+                                HorizontalAlignment="Left"
+                                Visibility="Collapsed"/>
+
+                        <!-- Toggle reveal -->
+                        <ToggleButton x:Name="ToggleP12PassReveal"
+                                    Grid.Column="1"
+                                    Width="28"
+                                    Height="24"
+                                    Margin="6,0,0,0"
+                                    VerticalAlignment="Center"
+                                    ToolTip="Show / hide P12 passphrase">
+                            <TextBlock x:Name="P12PassRevealIcon"
+                                    Text="&#xE890;"
+                                    FontFamily="Segoe MDL2 Assets"
+                                    FontSize="14"
+                                    Foreground="#f0f0f0"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Center"/>
+                        </ToggleButton>
+                    </Grid>
                     <!-- keep column 2 empty so it aligns with Browse row -->
                 </Grid>
             </GroupBox>
@@ -625,6 +787,19 @@ $PortBox        = $MainWindow.FindName("PortBox")
 $UserBox        = $MainWindow.FindName("UserBox")
 $OpenServerButton = $MainWindow.FindName("OpenServerButton")
 $PasswordBox    = $MainWindow.FindName("PasswordBox")
+
+$PasswordRevealBox = $MainWindow.FindName("PasswordRevealBox")
+$TogglePassReveal  = $MainWindow.FindName("TogglePassReveal")
+$PassRevealIcon    = $MainWindow.FindName("PassRevealIcon")
+
+$NewPasswordRevealBox = $MainWindow.FindName("NewPasswordRevealBox")
+$ToggleNewPassReveal  = $MainWindow.FindName("ToggleNewPassReveal")
+$NewPassRevealIcon    = $MainWindow.FindName("NewPassRevealIcon")
+
+$P12PasswordRevealBox = $MainWindow.FindName("P12PasswordRevealBox")
+$ToggleP12PassReveal  = $MainWindow.FindName("ToggleP12PassReveal")
+$P12PassRevealIcon    = $MainWindow.FindName("P12PassRevealIcon")
+
 $KeyBox         = $MainWindow.FindName("KeyBox")
 $BrowseKeyButton= $MainWindow.FindName("BrowseKeyButton")
 $NewUserBox     = $MainWindow.FindName("NewUserBox")
@@ -765,12 +940,14 @@ $script:SetUsernameAction = [Action[string]]{
         if (-not $UserBox) { return }
         if ([string]::IsNullOrWhiteSpace($u)) { return }
 
+        $safe = Sanitize-UbuntuUsername -Text ([string]$u)
+
         if ($script:UiDispatcher -and -not $script:UiDispatcher.CheckAccess()) {
             $null = $script:UiDispatcher.BeginInvoke([Action]{
-                try { if ($UserBox) { $UserBox.Text = $u } } catch {}
+                try { if ($UserBox) { $UserBox.Text = $safe } } catch {}
             })
         } else {
-            try { $UserBox.Text = $u } catch {}
+            try { $UserBox.Text = $safe } catch {}
         }
     } catch {}
 }
@@ -864,7 +1041,7 @@ $script:OfferSaveProfileFunc = [Func[string,string,string,string,string,int,stri
         [string]$sshPort,
         [string]$username,
         [string]$identityFile,
-        [int]$PromptFlag = 0   # 1 = setup complete, 0 = verification-only
+        [int]$PromptFlag = 0
     )
 
     try {
@@ -1250,8 +1427,594 @@ try {
     if ($KeyBox)  { $KeyBox.Add_TextChanged({ Update-OpenServerButtonVisibility }) }
 } catch {}
 
+function Flash-TextBoxWarning {
+    param(
+        [Parameter(Mandatory=$true)][System.Windows.Controls.TextBox]$Tb,
+        [int]$Ms = 450
+    )
+
+    try {
+        if (-not $Tb) { return }
+
+        $warnBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#f5c542")
+
+        try { $Tb.BorderBrush = $warnBrush } catch {}
+        try { $Tb.BorderThickness = [System.Windows.Thickness]::new(2) } catch {}
+
+        $timer = New-Object System.Windows.Threading.DispatcherTimer
+        $timer.Interval = [TimeSpan]::FromMilliseconds($Ms)
+        $timer.Tag = $Tb
+
+        $timer.Add_Tick({
+            param($s, $e)
+            try {
+                $t = $s.Tag
+                if ($t) {
+                    try { $t.ClearValue([System.Windows.Controls.TextBox]::BorderBrushProperty) } catch {}
+                    try { $t.ClearValue([System.Windows.Controls.TextBox]::BorderThicknessProperty) } catch {}
+                }
+            } catch {}
+            try { $s.Stop() } catch {}
+        })
+
+        $timer.Start()
+    } catch {}
+}
+
+function Sanitize-UbuntuUsername {
+    param([string]$Text)
+
+    try {
+        if ($null -eq $Text) { return "" }
+
+        $t = ([string]$Text).ToLowerInvariant()
+        $t = [regex]::Replace($t, '[^a-z0-9_-]', '')
+        $t = [regex]::Replace($t, '^[^a-z]+', '')
+        if ($t.Length -gt 32) { $t = $t.Substring(0, 32) }
+
+        return $t
+    } catch {
+        return ""
+    }
+}
+
+function Test-UbuntuUsernameCandidate {
+    param(
+        [Parameter(Mandatory=$true)][System.Windows.Controls.TextBox]$Tb,
+        [Parameter(Mandatory=$true)][string]$InsertText
+    )
+
+    try {
+        $before = ""
+        try { $before = [string]$Tb.Text } catch { $before = "" }
+
+        $selStart = 0
+        $selLen   = 0
+        try { $selStart = [int]$Tb.SelectionStart } catch { $selStart = 0 }
+        try { $selLen   = [int]$Tb.SelectionLength } catch { $selLen = 0 }
+
+        if ($selStart -lt 0) { $selStart = 0 }
+        if ($selStart -gt $before.Length) { $selStart = $before.Length }
+        if ($selLen -lt 0) { $selLen = 0 }
+        if (($selStart + $selLen) -gt $before.Length) { $selLen = ($before.Length - $selStart) }
+
+        $candidate =
+            $before.Substring(0, $selStart) +
+            $InsertText +
+            $before.Substring($selStart + $selLen)
+
+        $candidate = Sanitize-UbuntuUsername -Text $candidate
+
+        if ([string]::IsNullOrEmpty($candidate)) { return $true }
+        return ($candidate -match '^[a-z][a-z0-9_-]{0,31}$')
+    } catch {
+        return $false
+    }
+}
+
+function Attach-UbuntuUsernameFilter {
+    param(
+        [Parameter(Mandatory=$true)][System.Windows.Controls.TextBox]$Tb,
+        [string]$Label = "Username"
+    )
+
+    if (-not $Tb) { return }
+
+    $Tb.Add_PreviewTextInput({
+        param($s, $e)
+
+        try {
+            if (-not $e -or [string]::IsNullOrEmpty($e.Text)) { return }
+
+            $ins = $e.Text
+
+            if ($ins -match '\s') {
+                $e.Handled = $true
+                try { Flash-TextBoxWarning -Tb ([System.Windows.Controls.TextBox]$s) } catch {}
+                return
+            }
+
+            $lower = $ins.ToLowerInvariant()
+            $lowerSan = [regex]::Replace($lower, '[^a-z0-9_-]', '')
+
+            if ([string]::IsNullOrEmpty($lowerSan)) {
+                $e.Handled = $true
+                try { Flash-TextBoxWarning -Tb ([System.Windows.Controls.TextBox]$s) } catch {}
+                return
+            }
+
+            $tb = [System.Windows.Controls.TextBox]$s
+
+            if (-not (Test-UbuntuUsernameCandidate -Tb $tb -InsertText $lowerSan)) {
+                $e.Handled = $true
+                try { Flash-TextBoxWarning -Tb $tb } catch {}
+                return
+            }
+
+            if ($lowerSan -ne $ins) {
+                $e.Handled = $true
+
+                $UiDispatcher.BeginInvoke([Action]{
+                    try {
+                        $tb2 = $tb
+                        if (-not $tb2) { return }
+                        $tb2.SelectedText = $lowerSan
+                        $tb2.CaretIndex = $tb2.SelectionStart + $lowerSan.Length
+                    } catch {}
+                }) | Out-Null
+                return
+            }
+        } catch {
+            try {
+                $e.Handled = $true
+                try { Flash-TextBoxWarning -Tb ([System.Windows.Controls.TextBox]$s) } catch {}
+            } catch {}
+        }
+    })
+
+    $Tb.Add_PreviewKeyDown({
+        param($s, $e)
+        try {
+            if (-not $e) { return }
+            if ($e.Key -eq [System.Windows.Input.Key]::Space) {
+                $e.Handled = $true
+                try { Flash-TextBoxWarning -Tb ([System.Windows.Controls.TextBox]$s) } catch {}
+                return
+            }
+        } catch {}
+    })
+
+    try {
+        [System.Windows.DataObject]::AddPastingHandler($Tb, [System.Windows.DataObjectPastingEventHandler]{
+            param($s, $e)
+            try {
+                if (-not $e) { return }
+
+                $raw = $null
+                try { $raw = $e.DataObject.GetData([System.Windows.DataFormats]::UnicodeText) } catch { $raw = $null }
+                if ($null -eq $raw) {
+                    try { $raw = $e.DataObject.GetData([System.Windows.DataFormats]::Text) } catch { $raw = $null }
+                }
+
+                $e.CancelCommand()
+
+                $tb = [System.Windows.Controls.TextBox]$s
+                if ($null -eq $raw) {
+                    try { Flash-TextBoxWarning -Tb $tb } catch {}
+                    return
+                }
+
+                $san = Sanitize-UbuntuUsername -Text ([string]$raw)
+
+                if ([string]::IsNullOrEmpty($san)) {
+                    try { Flash-TextBoxWarning -Tb $tb } catch {}
+                    return
+                }
+
+                if (-not (Test-UbuntuUsernameCandidate -Tb $tb -InsertText $san)) {
+                    try { Flash-TextBoxWarning -Tb $tb } catch {}
+                    return
+                }
+
+                $UiDispatcher.BeginInvoke([Action]{
+                    try {
+                        $tb2 = $tb
+                        if (-not $tb2) { return }
+                        $tb2.SelectedText = $san
+                        $tb2.CaretIndex = $tb2.SelectionStart + $san.Length
+                    } catch {}
+                }) | Out-Null
+            } catch {
+                try {
+                    try { $e.CancelCommand() } catch {}
+                    try { Flash-TextBoxWarning -Tb ([System.Windows.Controls.TextBox]$s) } catch {}
+                } catch {}
+            }
+        })
+    } catch {}
+
+    $Tb.Add_TextChanged({
+        param($s, $e)
+        try {
+            $tb = [System.Windows.Controls.TextBox]$s
+            if (-not $tb) { return }
+
+            if (-not ($tb.Tag -is [hashtable])) { $tb.Tag = @{} }
+            if ($tb.Tag["__UbUserSanitizeGuard"] -eq $true) { return }
+            $tb.Tag["__UbUserSanitizeGuard"] = $true
+
+            $orig = [string]$tb.Text
+            $san  = Sanitize-UbuntuUsername -Text $orig
+
+            if ($san -ne $orig) {
+                $caret = 0
+                try { $caret = [int]$tb.CaretIndex } catch { $caret = 0 }
+
+                $tb.Text = $san
+
+                if ($caret -gt $san.Length) { $caret = $san.Length }
+                if ($caret -lt 0) { $caret = 0 }
+                $tb.CaretIndex = $caret
+            }
+        } catch {
+        } finally {
+            try {
+                $tb2 = [System.Windows.Controls.TextBox]$s
+                if ($tb2 -and ($tb2.Tag -is [hashtable])) {
+                    $tb2.Tag["__UbUserSanitizeGuard"] = $false
+                }
+            } catch {}
+        }
+    })
+
+    try {
+        $Tb.Text = (Sanitize-UbuntuUsername -Text ([string]$Tb.Text))
+    } catch {}
+}
+
+try {
+    if ($UserBox)    { Attach-UbuntuUsernameFilter -Tb $UserBox    -Label "Server Username" }
+    if ($NewUserBox) { Attach-UbuntuUsernameFilter -Tb $NewUserBox -Label "New Username" }
+} catch {}
+
+try {
+    if ($UserBox) {
+        $UserBox.Add_TextChanged({
+            param($s, $e)
+            try {
+                $tb = [System.Windows.Controls.TextBox]$s
+                if (-not $tb) { return }
+
+                if (-not ($tb.Tag -is [hashtable])) { $tb.Tag = @{} }
+                if ($tb.Tag["__ForceLowerGuard"] -eq $true) { return }
+                $tb.Tag["__ForceLowerGuard"] = $true
+
+                $t  = [string]$tb.Text
+                $lo = $t.ToLowerInvariant()
+
+                if ($lo -ne $t) {
+                    $c = 0
+                    try { $c = [int]$tb.CaretIndex } catch { $c = 0 }
+
+                    $tb.Text = $lo
+
+                    if ($c -gt $lo.Length) { $c = $lo.Length }
+                    if ($c -lt 0) { $c = 0 }
+                    $tb.CaretIndex = $c
+                }
+            } catch {} finally {
+                try {
+                    $tb2 = [System.Windows.Controls.TextBox]$s
+                    if ($tb2 -and ($tb2.Tag -is [hashtable])) { $tb2.Tag["__ForceLowerGuard"] = $false }
+                } catch {}
+            }
+        })
+    }
+
+    if ($NewUserBox) {
+        $NewUserBox.Add_TextChanged({
+            param($s, $e)
+            try {
+                $tb = [System.Windows.Controls.TextBox]$s
+                if (-not $tb) { return }
+
+                if (-not ($tb.Tag -is [hashtable])) { $tb.Tag = @{} }
+                if ($tb.Tag["__ForceLowerGuard"] -eq $true) { return }
+                $tb.Tag["__ForceLowerGuard"] = $true
+
+                $t  = [string]$tb.Text
+                $lo = $t.ToLowerInvariant()
+
+                if ($lo -ne $t) {
+                    $c = 0
+                    try { $c = [int]$tb.CaretIndex } catch { $c = 0 }
+
+                    $tb.Text = $lo
+
+                    if ($c -gt $lo.Length) { $c = $lo.Length }
+                    if ($c -lt 0) { $c = 0 }
+                    $tb.CaretIndex = $c
+                }
+            } catch {} finally {
+                try {
+                    $tb2 = [System.Windows.Controls.TextBox]$s
+                    if ($tb2 -and ($tb2.Tag -is [hashtable])) { $tb2.Tag["__ForceLowerGuard"] = $false }
+                } catch {}
+            }
+        })
+    }
+} catch {}
+
 try { Update-OpenServerButtonVisibility } catch {}
 try { Update-StartButtonState } catch {}
+
+$script:PassToggleHover = $false
+
+function Update-PassToggleVisual {
+    try {
+        if (-not $TogglePassReveal) { return }
+
+        $bgDefault = "#2f3238"
+        $bgHover   = "#25272b"
+        $bgChecked = "#1e1f22"
+        $fgIcon    = "#f0f0f0"
+
+        $hex = $bgDefault
+        try {
+            if ($TogglePassReveal.IsChecked -eq $true) {
+                $hex = $bgChecked
+            } elseif ($script:PassToggleHover -eq $true) {
+                $hex = $bgHover
+            }
+        } catch {}
+
+        $b = [System.Windows.Media.BrushConverter]::new().ConvertFromString($hex)
+        $TogglePassReveal.Background  = $b
+        $TogglePassReveal.BorderBrush = $b
+
+        $TogglePassReveal.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgIcon)
+
+        if ($PassRevealIcon) {
+            $PassRevealIcon.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgIcon)
+        }
+    } catch {}
+}
+
+try {
+    if ($TogglePassReveal) {
+
+        $TogglePassReveal.Add_MouseEnter({
+            try { $script:PassToggleHover = $true } catch {}
+            try { Update-PassToggleVisual } catch {}
+        })
+
+        $TogglePassReveal.Add_MouseLeave({
+            try { $script:PassToggleHover = $false } catch {}
+            try { Update-PassToggleVisual } catch {}
+        })
+
+        $TogglePassReveal.Add_Checked({ try { Update-PassToggleVisual } catch {} })
+        $TogglePassReveal.Add_Unchecked({ try { Update-PassToggleVisual } catch {} })
+
+        Update-PassToggleVisual
+    }
+} catch {}
+
+$script:PassRevealSyncGuard = $false
+function Set-PassRevealState {
+    param([bool]$Reveal)
+
+    try {
+        if (-not $PasswordBox -or -not $PasswordRevealBox) { return }
+
+        if ($Reveal) {
+            try { $PasswordRevealBox.Text = $PasswordBox.Password } catch {}
+            $PasswordBox.Visibility = "Collapsed"
+            $PasswordRevealBox.Visibility = "Visible"
+            try { $PasswordRevealBox.Focus() } catch {}
+
+            try { if ($PassRevealIcon) { $PassRevealIcon.Text = [char]0xE72E } } catch {}
+            try { Update-PassToggleVisual } catch {}
+        } else {
+            try { $PasswordBox.Password = $PasswordRevealBox.Text } catch {}
+            $PasswordRevealBox.Visibility = "Collapsed"
+            $PasswordBox.Visibility = "Visible"
+            try { $PasswordBox.Focus() } catch {}
+
+            try { if ($PassRevealIcon) { $PassRevealIcon.Text = [char]0xE890 } } catch {}
+            try { Update-PassToggleVisual } catch {}
+        }
+    } catch {}
+}
+
+try {
+    if ($PasswordBox -and $PasswordRevealBox) {
+
+        $PasswordBox.Add_PasswordChanged({
+            if ($script:PassRevealSyncGuard) { return }
+            try {
+                $script:PassRevealSyncGuard = $true
+                if ($PasswordRevealBox.Visibility -eq "Visible") {
+                    $PasswordRevealBox.Text = $PasswordBox.Password
+                }
+            } catch {} finally { $script:PassRevealSyncGuard = $false }
+        })
+
+        $PasswordRevealBox.Add_TextChanged({
+            if ($script:PassRevealSyncGuard) { return }
+            try {
+                $script:PassRevealSyncGuard = $true
+                $PasswordBox.Password = $PasswordRevealBox.Text
+            } catch {} finally { $script:PassRevealSyncGuard = $false }
+        })
+    }
+} catch {}
+
+try {
+    if ($TogglePassReveal) {
+        $TogglePassReveal.Add_Checked({ Set-PassRevealState -Reveal $true })
+        $TogglePassReveal.Add_Unchecked({ Set-PassRevealState -Reveal $false })
+    }
+} catch {}
+
+try { Set-PassRevealState -Reveal $false } catch {}
+
+$script:NewPassRevealSyncGuard = $false
+
+function Set-NewPassRevealState {
+    param([bool]$Reveal)
+    try {
+        if (-not $NewPasswordBox -or -not $NewPasswordRevealBox) { return }
+
+        if ($Reveal) {
+            try { $NewPasswordRevealBox.Text = $NewPasswordBox.Password } catch {}
+            $NewPasswordBox.Visibility = "Collapsed"
+            $NewPasswordRevealBox.Visibility = "Visible"
+            try { $NewPasswordRevealBox.Focus() } catch {}
+            try { if ($NewPassRevealIcon) { $NewPassRevealIcon.Text = [char]0xE72E } } catch {}
+        } else {
+            try { $NewPasswordBox.Password = $NewPasswordRevealBox.Text } catch {}
+            $NewPasswordRevealBox.Visibility = "Collapsed"
+            $NewPasswordBox.Visibility = "Visible"
+            try { $NewPasswordBox.Focus() } catch {}
+            try { if ($NewPassRevealIcon) { $NewPassRevealIcon.Text = [char]0xE890 } } catch {}
+        }
+    } catch {}
+}
+
+try {
+    if ($NewPasswordBox -and $NewPasswordRevealBox) {
+
+        $NewPasswordBox.Add_PasswordChanged({
+            if ($script:NewPassRevealSyncGuard) { return }
+            try {
+                $script:NewPassRevealSyncGuard = $true
+                if ($NewPasswordRevealBox.Visibility -eq "Visible") {
+                    $NewPasswordRevealBox.Text = $NewPasswordBox.Password
+                }
+            } catch {} finally { $script:NewPassRevealSyncGuard = $false }
+        })
+
+        $NewPasswordRevealBox.Add_TextChanged({
+            if ($script:NewPassRevealSyncGuard) { return }
+            try {
+                $script:NewPassRevealSyncGuard = $true
+                $NewPasswordBox.Password = $NewPasswordRevealBox.Text
+            } catch {} finally { $script:NewPassRevealSyncGuard = $false }
+        })
+    }
+} catch {}
+
+try {
+    if ($ToggleNewPassReveal) {
+        $ToggleNewPassReveal.Add_Checked({ Set-NewPassRevealState -Reveal $true })
+        $ToggleNewPassReveal.Add_Unchecked({ Set-NewPassRevealState -Reveal $false })
+    }
+} catch {}
+
+try { Set-NewPassRevealState -Reveal $false } catch {}
+
+$script:P12PassRevealSyncGuard = $false
+
+function Set-P12PassRevealState {
+    param([bool]$Reveal)
+    try {
+        if (-not $P12PasswordBox -or -not $P12PasswordRevealBox) { return }
+
+        if ($Reveal) {
+            try { $P12PasswordRevealBox.Text = $P12PasswordBox.Password } catch {}
+            $P12PasswordBox.Visibility = "Collapsed"
+            $P12PasswordRevealBox.Visibility = "Visible"
+            try { $P12PasswordRevealBox.Focus() } catch {}
+            try { if ($P12PassRevealIcon) { $P12PassRevealIcon.Text = [char]0xE72E } } catch {}
+        } else {
+            try { $P12PasswordBox.Password = $P12PasswordRevealBox.Text } catch {}
+            $P12PasswordRevealBox.Visibility = "Collapsed"
+            $P12PasswordBox.Visibility = "Visible"
+            try { $P12PasswordBox.Focus() } catch {}
+            try { if ($P12PassRevealIcon) { $P12PassRevealIcon.Text = [char]0xE890 } } catch {}
+        }
+    } catch {}
+}
+
+try {
+    if ($P12PasswordBox -and $P12PasswordRevealBox) {
+
+        $P12PasswordBox.Add_PasswordChanged({
+            if ($script:P12PassRevealSyncGuard) { return }
+            try {
+                $script:P12PassRevealSyncGuard = $true
+                if ($P12PasswordRevealBox.Visibility -eq "Visible") {
+                    $P12PasswordRevealBox.Text = $P12PasswordBox.Password
+                }
+            } catch {} finally { $script:P12PassRevealSyncGuard = $false }
+        })
+
+        $P12PasswordRevealBox.Add_TextChanged({
+            if ($script:P12PassRevealSyncGuard) { return }
+            try {
+                $script:P12PassRevealSyncGuard = $true
+                $P12PasswordBox.Password = $P12PasswordRevealBox.Text
+            } catch {} finally { $script:P12PassRevealSyncGuard = $false }
+        })
+    }
+} catch {}
+
+try {
+    if ($ToggleP12PassReveal) {
+        $ToggleP12PassReveal.Add_Checked({ Set-P12PassRevealState -Reveal $true })
+        $ToggleP12PassReveal.Add_Unchecked({ Set-P12PassRevealState -Reveal $false })
+    }
+} catch {}
+
+try { Set-P12PassRevealState -Reveal $false } catch {}
+
+$script:PassToggleHover = $false
+
+function Update-PassToggleVisual {
+    try {
+        if (-not $TogglePassReveal) { return }
+
+        $bg = "#2f3238"
+        try {
+            if ($TogglePassReveal.IsChecked -eq $true) {
+                $bg = "#1e1f22"
+            } elseif ($script:PassToggleHover -eq $true) {
+                $bg = "#3b3f46"
+            }
+        } catch {}
+
+        $TogglePassReveal.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($bg)
+        $TogglePassReveal.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString($bg)
+
+        $TogglePassReveal.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#f0f0f0")
+
+        if ($PassRevealIcon) {
+            $PassRevealIcon.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#f0f0f0")
+        }
+    } catch {}
+}
+
+try {
+    if ($TogglePassReveal) {
+
+        $TogglePassReveal.Add_MouseEnter({
+            try { $script:PassToggleHover = $true } catch {}
+            try { Update-PassToggleVisual } catch {}
+        })
+
+        $TogglePassReveal.Add_MouseLeave({
+            try { $script:PassToggleHover = $false } catch {}
+            try { Update-PassToggleVisual } catch {}
+        })
+
+        $TogglePassReveal.Add_Checked({ try { Update-PassToggleVisual } catch {} })
+        $TogglePassReveal.Add_Unchecked({ try { Update-PassToggleVisual } catch {} })
+
+        Update-PassToggleVisual
+    }
+} catch {}
+
 
 if ($OpenServerButton) {
     $OpenServerButton.Add_Click({
@@ -2694,7 +3457,6 @@ function WL([string]`$m){
   }catch{}
 }
 
-# Wait for parent to exit (crash-safe)
 while(`$true){
   try{
     `$p=Get-Process -Id `$parentPid -ErrorAction SilentlyContinue
@@ -2705,7 +3467,6 @@ while(`$true){
 
 WL "KEY_CLEANUP_WATCHDOG_TRIGGERED parentPid=`$parentPid"
 
-# Locate ssh-add
 `$sshAddExe=Join-Path `$env:WINDIR "System32\OpenSSH\ssh-add.exe"
 if(-not (Test-Path `$sshAddExe)){
   try{ `$sshAddExe=(Get-Command ssh-add -ErrorAction Stop).Source }catch{ `$sshAddExe=$null }
@@ -2715,7 +3476,6 @@ if(-not `$sshAddExe){
   exit 0
 }
 
-# Session dir from env
 `$sess = `$env:SERVER_TOOLKIT_SSHAGENT_SESSIONDIR
 if(-not `$sess -or -not (Test-Path -LiteralPath `$sess)){
   WL "KEY_CLEANUP_WATCHDOG_SKIP no session dir env/dir missing"
@@ -2872,7 +3632,6 @@ function Cleanup-ServerToolkitOwnedAgentKeys {
                 try { & `$sshAddExe -d "`$commentPath" 1>`$null 2>`$null } catch {}
             }
 
-            # Remove the agent registry entry (this is what actually “forgets” it)
             try { Remove-Item -LiteralPath `$sub.PSPath -Recurse -Force -ErrorAction SilentlyContinue } catch {}
 
             `$removed++
@@ -2890,12 +3649,9 @@ Write-HelperLog "HELPER_STARTED ssh-agent prevStartType=`$prevStartType prevStat
 `$start = `$null
 
 try {
-    # IMPORTANT: If ssh-agent was Disabled, it cannot be started.
-    # Set to MANUAL for this session (not Automatic), so it won't auto-restart on reboot.
     try { Set-Service ssh-agent -StartupType Manual } catch {}
     try { Start-Service ssh-agent } catch {}
 
-    # Confirm running (best-effort)
     try {
         `$svc = Get-Service ssh-agent -ErrorAction SilentlyContinue
         Write-HelperLog ("HELPER_AGENT_STATE status=" + `$svc.Status + " startType=" + `$svc.StartType)
@@ -2939,7 +3695,6 @@ try {
 
 } finally {
 
-    # Always try to cleanup keys FIRST (so cleanup still works even if we revert/stop agent)
     try {
         Cleanup-ServerToolkitOwnedAgentKeys
     } catch {
@@ -3462,7 +4217,6 @@ function Show-PpkHelpDialog {
     $baseName = [IO.Path]::GetFileNameWithoutExtension($PpkPath)
     $recommendedKey = Join-Path $sshDir ($baseName + "-ssh")
 
-    # Theme colors
     $bgDark        = "#1e1f22"
     $panelBg       = "#25272b"
     $fgMain        = "#f0f0f0"
@@ -3575,7 +4329,6 @@ function Show-PpkHelpDialog {
     $root.Children.Add($hdrRow) | Out-Null
     [System.Windows.Controls.Grid]::SetRow($hdrRow, 0)
 
-    # BODY
     $border = New-Object System.Windows.Controls.Border
     $border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($panelBg)
     $border.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString($borderDark)
@@ -3712,7 +4465,6 @@ function Show-P12ValidatedDialog {
         [Parameter(Mandatory=$false)][string]$Alias = ""
     )
 
-    # Theme colors
     $bgDark        = "#1e1f22"
     $panelBg       = "#25272b"
     $fgMain        = "#f0f0f0"
@@ -3801,7 +4553,6 @@ function Show-P12ValidatedDialog {
     $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "*"    })) | Out-Null
     $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
 
-    # Header
     $hdrRow = New-Object System.Windows.Controls.StackPanel
     $hdrRow.Orientation = "Horizontal"
     $hdrRow.Margin = "0,0,0,12"
@@ -3824,7 +4575,6 @@ function Show-P12ValidatedDialog {
     $root.Children.Add($hdrRow) | Out-Null
     [System.Windows.Controls.Grid]::SetRow($hdrRow, 0)
 
-    # Body
     $border = New-Object System.Windows.Controls.Border
     $border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($panelBg)
     $border.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString($borderDark)
@@ -3874,7 +4624,6 @@ function Show-P12ValidatedDialog {
     $root.Children.Add($border) | Out-Null
     [System.Windows.Controls.Grid]::SetRow($border, 1)
 
-    # Buttons
     $btnRow = New-Object System.Windows.Controls.StackPanel
     $btnRow.Orientation = "Horizontal"
     $btnRow.HorizontalAlignment = "Right"
@@ -3935,7 +4684,6 @@ function Show-Confirm3ChoiceDialog {
         [Parameter(Mandatory=$true)][string]$CancelText
     )
 
-    # Theme colors
     $bgDark     = "#1e1f22"
     $panelBg    = "#25272b"
     $fgMain     = "#f0f0f0"
@@ -4019,7 +4767,6 @@ function Show-Confirm3ChoiceDialog {
     $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "*"    })) | Out-Null
     $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
 
-    # Header row
     $hdrRow = New-Object System.Windows.Controls.StackPanel
     $hdrRow.Orientation = "Horizontal"
     $hdrRow.Margin = "0,0,0,12"
@@ -4042,7 +4789,6 @@ function Show-Confirm3ChoiceDialog {
     $root.Children.Add($hdrRow) | Out-Null
     [System.Windows.Controls.Grid]::SetRow($hdrRow, 0)
 
-    # Body
     $border = New-Object System.Windows.Controls.Border
     $border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString($panelBg)
     $border.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString($borderDark)
@@ -4060,7 +4806,6 @@ function Show-Confirm3ChoiceDialog {
     $root.Children.Add($border) | Out-Null
     [System.Windows.Controls.Grid]::SetRow($border, 1)
 
-    # Buttons
     $btnRow = New-Object System.Windows.Controls.StackPanel
     $btnRow.Orientation = "Horizontal"
     $btnRow.HorizontalAlignment = "Right"
@@ -4138,7 +4883,6 @@ function Show-SaveProfileDialog {
         [Parameter(Mandatory=$true)][int]$PromptFlag
     )
 
-    # Theme colors
     $bgDark     = "#1e1f22"
     $panelBg    = "#25272b"
     $fgMain     = "#f0f0f0"
@@ -4501,7 +5245,7 @@ function Show-P12AliasDialog {
 
         $row.ToolTip = $Tooltip
 
-        $row.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00000000")  # transparent but hit-testable
+        $row.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00000000")
         $row.CornerRadius = "4"
         $row.Padding = "2,2"
         $row.Margin = "0,0,0,12"
@@ -4624,7 +5368,7 @@ function Show-P12AliasDialog {
 
     $icon = New-Object System.Windows.Controls.TextBlock
     $icon.FontFamily = "Segoe MDL2 Assets"
-    $icon.Text = [char]0xE7BA   # info glyph
+    $icon.Text = [char]0xE7BA
     $icon.FontSize = 22
     $icon.Margin = "0,1,10,0"
     $icon.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgWarning)
@@ -4769,8 +5513,8 @@ $BrowseKeyButton.Add_Click({
             $MainWindow,
             "The selected file does not appear to be a valid SSH private key.`r`n`r`n" +
             "Expected formats:`r`n" +
-            "• OpenSSH private key`r`n" +
-            "• PEM private key`r`n`r`n" +
+            "* OpenSSH private key`r`n" +
+            "* PEM private key`r`n`r`n" +
             "First line read:`r`n$firstLine",
             "Invalid Key File",
             [System.Windows.MessageBoxButton]::OK,
@@ -4956,9 +5700,6 @@ if ($ResetHostKeysButton) {
     })
 }
 
-# ==========================================================
-# START SETUP BUTTON
-# ==========================================================
 $StartButton.Add_Click({
 
     try {
@@ -4973,9 +5714,6 @@ $StartButton.Add_Click({
     try { $StartButton.Content = "Working..." } catch {}
     try { $script:IsBackgroundRunning = $true } catch {}
 
-    # -------------------------
-    # Read UI inputs
-    # -------------------------
     $ui_serverHost = ""
     $ui_port       = ""
     $ui_user       = ""
@@ -5003,9 +5741,6 @@ $StartButton.Add_Click({
     try { $ui_uploadP12 = ($UploadP12Check -and ($UploadP12Check.IsChecked -eq $true)) } catch {}
     try { $ui_p12Path   = if ($P12PathBox) { $P12PathBox.Text.Trim() } else { "" } } catch {}
 
-    # -------------------------
-    # Validate P12 locally
-    # -------------------------
     if ($ui_uploadP12 -eq $true) {
 
         if ([string]::IsNullOrWhiteSpace($ui_p12Path) -or -not (Test-Path -LiteralPath $ui_p12Path)) {
@@ -5096,16 +5831,12 @@ $StartButton.Add_Click({
         }
     }
 
-    # -------------------------
-    # Ensure ssh-agent prestart
-    # -------------------------
     if (-not (Ensure-SshAgentSessionPreStart -KeyPath $ui_keyPath -Passphrase $ui_pass)) {
         try { if ($script:AppendLog) { $script:AppendLog.Invoke("[FATAL] Cannot continue without enabling ssh-agent for encrypted key automation.`r`n") } } catch {}
         try { if ($UnlockUIAction) { $UnlockUIAction.Invoke() } } catch {}
         return
     }
 
-    # Agent pubkey will be collected in the worker AFTER ssh-add runs
     $ui_agentPubKey = ""
 
     try { if ($script:AppendLog) { $script:AppendLog.Invoke("[INFO] Start clicked. Launching background setup...`r`n") } } catch {}
@@ -5133,9 +5864,6 @@ $StartButton.Add_Click({
     $ui_createNonRoot = $false
     try { $ui_createNonRoot = ($CreateNonRootCheck -and ($CreateNonRootCheck.IsChecked -eq $true)) } catch {}
 
-    # -------------------------
-    # Worker context
-    # -------------------------
     $ctx = @{
         ui_serverHost         = $ui_serverHost
         ui_port               = $ui_port
@@ -5158,9 +5886,6 @@ $StartButton.Add_Click({
         TaskResult            = $script:TaskResult
     }
 
-    # -------------------------
-    # Launch background worker (FULL logic inside)
-    # -------------------------
     $task = Invoke-BackgroundUI -Context $ctx -Work {
 
         function Safe-AppendLog {
@@ -5421,9 +6146,6 @@ exit 0
                 try { if ($TaskResult) { $TaskResult.User = $user } } catch {}
             }
 
-            # -------------------------
-            # P12 Upload (optional)
-            # -------------------------
             $remoteP12Path = ""
             if ($doP12) {
 
@@ -5566,9 +6288,6 @@ exit 0
                 }
             }
 
-            # ----------------------------------------------------------
-            # Setup complete (end)
-            # ----------------------------------------------------------
             try {
                 if ($doP12 -eq $true) {
                     Safe-AppendLog "[INFO] Setup complete - P12 upload successful.`r`n"
@@ -5597,9 +6316,6 @@ exit 0
         } catch {}
     }
 
-    # -------------------------
-    # After worker started
-    # -------------------------
     if (-not $task) {
         try { if ($script:AppendLog) { $script:AppendLog.Invoke("[FATAL] Background setup did not start. Re-enabling UI.`r`n") } } catch {}
         try { if ($UnlockUIAction) { $UnlockUIAction.Invoke() } } catch {}
@@ -5680,10 +6396,6 @@ try {
     $MainWindow.ShowInTaskbar = $true
     $MainWindow.Topmost       = $false
 
-    # ==========================================================
-    # STARTUP WATCHDOG (prevents hidden/stuck powershell launches)
-    # If window doesn't render within 12s, log + force exit.
-    # ==========================================================
     $script:StartupWatchdogTimer = $null
     $script:StartupWatchdogArmed = $true
 
