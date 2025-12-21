@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# If not running in bash, re-exec with bash
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec /bin/bash "$0" "$@"
+fi
+
 # ============================================================
 #  STARDUST COLLECTIVE
 #  SECURE P12 UPLOAD & SSH SETUP TOOL (macOS)
