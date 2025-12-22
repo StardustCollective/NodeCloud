@@ -1,4 +1,4 @@
-$scriptversion = "1.0"
+$scriptversion = "1.1"
 
 try {
     $global:ServerToolkitLogPath = Join-Path $env:USERPROFILE "server-toolkit.log"
@@ -34,11 +34,12 @@ try {
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 Add-Type -AssemblyName System.Xaml
+try { Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue } catch {}
 
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Server Toolkit ${scriptversion} - Stardust Collective" Height="650" Width="715" WindowStartupLocation="CenterScreen"
+        Title="Server Toolkit ${scriptversion} - Stardust Collective" Height="700" Width="715" WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         Background="#1e1f22"
         Foreground="#f0f0f0"
@@ -516,11 +517,23 @@ Ubuntu username rules:
                                 Margin="5,2,8,2"
                                 IsReadOnly="True"/>
 
+                        <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Margin="0,2,8,2">
+
                         <Button x:Name="BrowseKeyButton"
-                            Grid.Column="1"
-                            Content="Browse..."
-                            Margin="0,2,77,2"
-                            Padding="18,10"/>
+                                Content="Browse..."
+                                Padding="18,10"
+                                ToolTip="Select an existing SSH private key file"/>
+
+                        <Button x:Name="CreateKeyButton"
+                                Content="+"
+                                FontSize="16"
+                                Width="34"
+                                Height="24"
+                                Margin="8,0,0,0"
+                                ToolTip="Create a new SSH key pair"/>
+                    </StackPanel>
                     </Grid>
 
                 </Grid>
@@ -623,9 +636,30 @@ Ubuntu username rules:
             </StackPanel>
 
             <!-- Upload P12 toggle -->
-            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="5,0,0,10">
-                <CheckBox x:Name="UploadP12Check" Content="Upload P12 file" IsChecked="False"/>
-            </StackPanel>
+            <Grid Grid.Row="2" Margin="5,0,0,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <CheckBox x:Name="UploadP12Check"
+                        Grid.Column="0"
+                        Content="Upload P12 file"
+                        IsChecked="False"/>
+
+                <!-- Spacer -->
+                <Border Grid.Column="1"/>
+
+                <Button x:Name="BackupP12Button"
+                        Grid.Column="2"
+                        Content="Backup P12"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Width="110"
+                        IsEnabled="False"
+                        Opacity="0.4"
+                        ToolTip="Search this system for existing P12 and back them up safely"/>
+            </Grid>
 
             <!-- Upload P12 area (disabled by default until UploadP12Check is checked - Phase 2 wiring) -->
             <GroupBox x:Name="P12Panel" Header="P12 Upload" Grid.Row="3" IsEnabled="False" Margin="0,0,0,10">
@@ -642,7 +676,7 @@ Ubuntu username rules:
                     </Grid.RowDefinitions>
 
                     <!-- Row 0: file picker -->
-                    <Label Content="P12 Wallet File:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" />
+                    <Label Content="P12 File:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" />
                     <TextBox x:Name="P12PathBox" Grid.Row="0" Grid.Column="1" Margin="8,2" IsReadOnly="True"/>
                     <Button x:Name="BrowseP12Button" Grid.Row="0" Grid.Column="2" Content="Browse..." Margin="5,2,0,2" Padding="8,0"/>
 
@@ -653,7 +687,7 @@ Ubuntu username rules:
                             <TextBlock.ToolTip>
                                 <ToolTip>
                                     <TextBlock TextWrapping="Wrap" Width="260">
-                                        This passphrase unlocks your P12 wallet locally so it can be validated and uploaded.
+                                        This passphrase unlocks your P12 locally so it can be validated and uploaded.
                                     </TextBlock>
                                 </ToolTip>
                             </TextBlock.ToolTip>
@@ -703,6 +737,7 @@ Ubuntu username rules:
                 <Button x:Name="StartButton"
                     Content="Start Setup"
                     Width="100"
+                    Height="24"
                     HorizontalAlignment="Center"
                     Style="{StaticResource StartButtonStyle}"/>
                 <Button x:Name="ResetHostKeysButton" Content="Reset Host Keys" Width="130" Margin="10,0,0,0" Visibility="Collapsed"/>
@@ -802,6 +837,7 @@ $P12PassRevealIcon    = $MainWindow.FindName("P12PassRevealIcon")
 
 $KeyBox         = $MainWindow.FindName("KeyBox")
 $BrowseKeyButton= $MainWindow.FindName("BrowseKeyButton")
+$CreateKeyButton = $MainWindow.FindName("CreateKeyButton")
 $NewUserBox     = $MainWindow.FindName("NewUserBox")
 $NewPasswordBox = $MainWindow.FindName("NewPasswordBox")
 $DisableRootCheck    = $MainWindow.FindName("DisableRootCheck")
@@ -814,6 +850,7 @@ $P12Panel            = $MainWindow.FindName("P12Panel")
 $P12PathBox          = $MainWindow.FindName("P12PathBox")
 $P12PasswordBox      = $MainWindow.FindName("P12PasswordBox")
 $BrowseP12Button     = $MainWindow.FindName("BrowseP12Button")
+$BackupP12Button     = $MainWindow.FindName("BackupP12Button")
 
 $StartButton    = $MainWindow.FindName("StartButton")
 $ResetHostKeysButton = $MainWindow.FindName("ResetHostKeysButton")
@@ -873,6 +910,7 @@ $script:ApplyUiEnabledAction = [Action[bool]]{
         if ($CreateNonRootCheck) { $CreateNonRootCheck.IsEnabled = $En }
         if ($UploadP12Check)     { $UploadP12Check.IsEnabled     = $En }
         if ($BrowseP12Button)    { $BrowseP12Button.IsEnabled    = $En }
+        if ($BackupP12Button)    { $BackupP12Button.IsEnabled    = $En }
         if ($ResetHostKeysButton){ $ResetHostKeysButton.IsEnabled = $En }
 
         if ($LogBox)          { $LogBox.IsEnabled = $true }
@@ -1259,8 +1297,9 @@ $script:AppendLog = [Action[string]]{
 
     try {
         if (-not $script:SuppressFileWrite -and -not $guiOnly) {
-            if (-not [string]::IsNullOrEmpty($ServerToolkitLogPath)) {
-                Write-SharedLog -Path $ServerToolkitLogPath -Value $line
+            $lp = $global:ServerToolkitLogPath
+            if (-not [string]::IsNullOrWhiteSpace($lp)) {
+                Write-SharedLog -Path $lp -Value $line
             }
         }
     } catch {}
@@ -1299,6 +1338,12 @@ $script:AppendLog = [Action[string]]{
             if ($showInGui) {
                 $guiLine = ($line -replace $GuiStripTsRegex, "")
 
+                if ($guiLine -match '(?i)\bCLEANUP:') {
+                    $showInGui = $false
+                }
+
+                if (-not $showInGui) { return }
+
                 $level = "INFO"
                 try {
                     $m2 = [regex]::Match($guiLine, '^\[(INFO|WARN|ERROR|FATAL)\]')
@@ -1311,7 +1356,7 @@ $script:AppendLog = [Action[string]]{
 
                 $guiLine = $guiLine `
                     -replace 'Disabling root SSH login and global password auth.*', 'Securing SSH configuration...' `
-                    -replace 'Uploading P12 via SCP as .*', 'Uploading P12 wallet...' `
+                    -replace 'Uploading P12 via SCP as .*', 'Uploading P12 file...' `
                     -replace 'Upload P12 enabled\. Starting secure upload.*', 'Preparing P12 upload...' `
                     -replace 'Adding .* to sudo group.*', 'Granting sudo access...' `
                     -replace 'Setting password for .*', 'Setting user password...' `
@@ -1391,6 +1436,36 @@ if (-not $script:SshSessions) {
     $script:SshSessions = @{}
 }
 
+function Update-BackupP12ButtonState {
+    try {
+        if (-not $BackupP12Button) { return }
+
+        $h = ""
+        $p = ""
+        $u = ""
+
+        try { $h = [string]$HostBox.Text } catch { $h = "" }
+        try { $p = [string]$PortBox.Text } catch { $p = "" }
+        try { $u = [string]$UserBox.Text } catch { $u = "" }
+
+        $hostOk = -not [string]::IsNullOrWhiteSpace($h)
+        $portOk = ($p.Trim() -match '^\d+$')
+        $userOk = -not [string]::IsNullOrWhiteSpace($u)
+
+        $uploadChecked = $false
+        try { $uploadChecked = ($UploadP12Check -and ($UploadP12Check.IsChecked -eq $true)) } catch { $uploadChecked = $false }
+
+        $enable = ($hostOk -and $portOk -and $userOk -and (-not $uploadChecked))
+
+        $BackupP12Button.IsEnabled = $enable
+        $BackupP12Button.Opacity   = if ($enable) { 1.0 } else { 0.4 }
+    } catch {}
+}
+
+function Safe-UpdateBackupP12ButtonState {
+    try { Update-BackupP12ButtonState } catch {}
+}
+
 function Update-OpenServerButtonVisibility {
     if (-not $OpenServerButton) { return }
 
@@ -1420,13 +1495,1020 @@ function Update-OpenServerButtonVisibility {
     } catch {}
 }
 
-try {
-    if ($HostBox) { $HostBox.Add_TextChanged({ Update-OpenServerButtonVisibility }) }
-    if ($PortBox) { $PortBox.Add_TextChanged({ Update-OpenServerButtonVisibility }) }
-    if ($UserBox) { $UserBox.Add_TextChanged({ Update-OpenServerButtonVisibility }) }
-    if ($KeyBox)  { $KeyBox.Add_TextChanged({ Update-OpenServerButtonVisibility }) }
-} catch {}
+function Get-SshExePath {
+    $winSsh = Join-Path $env:WINDIR "System32\OpenSSH\ssh.exe"
+    if (Test-Path -LiteralPath $winSsh) { return $winSsh }
+    try { return (Get-Command ssh -ErrorAction Stop).Source } catch { return $null }
+}
 
+function Get-ScpExePath {
+    $winScp = Join-Path $env:WINDIR "System32\OpenSSH\scp.exe"
+    if (Test-Path -LiteralPath $winScp) { return $winScp }
+    try { return (Get-Command scp -ErrorAction Stop).Source } catch { return $null }
+}
+
+function Get-KnownHostsPathSafe {
+    try {
+        $sshDir = Join-Path $env:USERPROFILE ".ssh"
+        if (-not (Test-Path -LiteralPath $sshDir)) { New-Item -ItemType Directory -Path $sshDir | Out-Null }
+        $kh = Join-Path $sshDir "known_hosts"
+        if (-not (Test-Path -LiteralPath $kh)) { New-Item -ItemType File -Path $kh -Force | Out-Null }
+        return $kh
+    } catch {
+        return (Join-Path $env:USERPROFILE ".ssh\known_hosts")
+    }
+}
+
+if (-not $script:SudoPwCache) { $script:SudoPwCache = @{} }
+
+function Get-RemoteKey {
+    param([string]$RemoteHost,[string]$Port,[string]$User)
+    return ("{0}:{1}:{2}" -f $RemoteHost,$Port,$User)
+}
+
+function Show-RemoteUserPasswordDialog {
+    param(
+        [Parameter(Mandatory=$true)][string]$RemoteUser,
+        [Parameter(Mandatory=$true)][string]$RemoteHost,
+        [Parameter(Mandatory=$true)][string]$Port
+    )
+
+    $bc = [System.Windows.Media.BrushConverter]::new()
+
+    $w = New-Object System.Windows.Window
+    $w.Title = "Password Required"
+    $w.Width = 760
+    $w.Height = 380
+    $w.WindowStartupLocation = "CenterOwner"
+    $w.ResizeMode = "NoResize"
+    $w.Owner = $MainWindow
+    $w.Background = $bc.ConvertFromString("#1e1f22")
+    $w.Foreground = $bc.ConvertFromString("#f0f0f0")
+    $w.FontFamily = "Segoe UI"
+
+    try {
+        if ($MainWindow -and $MainWindow.Resources) {
+            if (-not $w.Resources) { $w.Resources = New-Object System.Windows.ResourceDictionary }
+            try { $w.Resources.MergedDictionaries.Add($MainWindow.Resources) | Out-Null } catch {}
+        }
+    } catch {}
+
+    function _TryStyle([string]$key) {
+        try { return $MainWindow.FindResource($key) } catch {}
+        try { return $w.FindResource($key) } catch {}
+        return $null
+    }
+
+    $PrimaryBtnStyle   = _TryStyle "StartButtonStyle"
+    $SecondaryBtnStyle = _TryStyle "SecondaryButtonStyle"
+
+    $root = New-Object System.Windows.Controls.Grid
+    $root.Margin = "18"
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="*"    })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+
+    $hdr = New-Object System.Windows.Controls.TextBlock
+    $hdr.Text = "Admin permissions needed to access protected folders"
+    $hdr.FontSize = 20
+    $hdr.FontWeight = "SemiBold"
+    $hdr.Margin = "0,0,0,12"
+    $root.Children.Add($hdr) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($hdr,0)
+
+    $panel = New-Object System.Windows.Controls.Border
+    $panel.Background = $bc.ConvertFromString("#25272b")
+    $panel.BorderBrush = $bc.ConvertFromString("#3b3f46")
+    $panel.BorderThickness = "1"
+    $panel.CornerRadius = "6"
+    $panel.Padding = "14"
+    [System.Windows.Controls.Grid]::SetRow($panel,1)
+
+    $stack = New-Object System.Windows.Controls.StackPanel
+
+    $info = New-Object System.Windows.Controls.TextBlock
+    $info.TextWrapping = "Wrap"
+    $info.Margin = "0,0,0,12"
+    $info.Text = "To search / and to stage protected files safely, the toolkit may need to run sudo as:`r`n`r`n  $RemoteUser@${RemoteHost}:$Port`r`n`r`nEnter the password for that user. This password is NOT saved to disk."
+    $stack.Children.Add($info) | Out-Null
+
+    $lbl = New-Object System.Windows.Controls.TextBlock
+    $lbl.Text = "Password:"
+    $lbl.FontWeight = "SemiBold"
+    $lbl.Margin = "0,0,0,6"
+    $stack.Children.Add($lbl) | Out-Null
+
+    $row = New-Object System.Windows.Controls.Grid
+    $row.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width="*" })) | Out-Null
+    $row.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width="Auto" })) | Out-Null
+
+    $pw = New-Object System.Windows.Controls.PasswordBox
+    $pw.Height = 28
+    $pw.Padding = "6,3"
+    $pw.Width = 540
+    $row.Children.Add($pw) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($pw,0)
+
+    $tb = New-Object System.Windows.Controls.TextBox
+    $tb.Height = 28
+    $tb.Padding = "6,3"
+    $tb.Width = 540
+    $tb.Visibility = "Collapsed"
+    $row.Children.Add($tb) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($tb,0)
+
+    $toggle = New-Object System.Windows.Controls.Primitives.ToggleButton
+    $toggle.Width = 34
+    $toggle.Height = 28
+    $toggle.Margin = "8,0,0,0"
+    $toggle.ToolTip = "Show / hide password"
+
+    $eye = New-Object System.Windows.Controls.TextBlock
+    $eye.FontFamily = "Segoe MDL2 Assets"
+    $eye.Text = [char]0xE890
+    $eye.FontSize = 14
+    $eye.VerticalAlignment = "Center"
+    $eye.HorizontalAlignment = "Center"
+    $toggle.Content = $eye
+
+    $toggle.Add_Checked({
+        try { $tb.Text = $pw.Password } catch {}
+        try { $pw.Visibility = "Collapsed" } catch {}
+        try { $tb.Visibility = "Visible" } catch {}
+        try { $eye.Text = [char]0xE72E } catch {}
+    })
+    $toggle.Add_Unchecked({
+        try { $pw.Password = $tb.Text } catch {}
+        try { $tb.Visibility = "Collapsed" } catch {}
+        try { $pw.Visibility = "Visible" } catch {}
+        try { $eye.Text = [char]0xE890 } catch {}
+    })
+
+    $row.Children.Add($toggle) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($toggle,1)
+
+    $stack.Children.Add($row) | Out-Null
+    $panel.Child = $stack
+    $root.Children.Add($panel) | Out-Null
+
+    $result = [hashtable]::Synchronized(@{ Ok=$false; Value="" })
+
+    $btnRow = New-Object System.Windows.Controls.StackPanel
+    $btnRow.Orientation = "Horizontal"
+    $btnRow.HorizontalAlignment = "Right"
+    $btnRow.Margin = "0,14,0,0"
+    [System.Windows.Controls.Grid]::SetRow($btnRow,2)
+
+    $btnCancel = New-Object System.Windows.Controls.Button
+    $btnCancel.Content = "Cancel"
+    if ($SecondaryBtnStyle) { $btnCancel.Style = $SecondaryBtnStyle }
+    $btnCancel.Margin = "0,0,10,0"
+    $btnCancel.Add_Click({ $result.Ok=$false; $result.Value=""; $w.Close() })
+    $btnRow.Children.Add($btnCancel) | Out-Null
+
+    $btnContinue = New-Object System.Windows.Controls.Button
+    $btnContinue.Content = "Continue"
+    if ($PrimaryBtnStyle) { $btnContinue.Style = $PrimaryBtnStyle }
+    $btnContinue.Add_Click({
+        $val = ""
+        try { $val = if ($pw.Visibility -eq "Visible") { $pw.Password } else { $tb.Text } } catch { $val = "" }
+        if ([string]::IsNullOrWhiteSpace($val)) {
+            [System.Windows.MessageBox]::Show($w, "Password cannot be empty.", "Password Required",
+                [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning) | Out-Null
+            return
+        }
+        $result.Ok=$true
+        $result.Value=$val
+        $w.Close()
+    })
+    $btnRow.Children.Add($btnContinue) | Out-Null
+
+    $root.Children.Add($btnRow) | Out-Null
+    $w.Content = $root
+    try { $w.Add_ContentRendered({ try { $pw.Focus() } catch {} }) | Out-Null } catch {}
+    $null = $w.ShowDialog()
+
+    if ($result.Ok -eq $true) { return $result.Value }
+    return ""
+}
+
+function Get-SudoPasswordForRemoteUser {
+    param(
+        [Parameter(Mandatory=$true)][string]$RemoteHost,
+        [Parameter(Mandatory=$true)][string]$Port,
+        [Parameter(Mandatory=$true)][string]$RemoteUser
+    )
+
+    $key = Get-RemoteKey -RemoteHost $RemoteHost -Port $Port -User $RemoteUser
+
+    try {
+        if ($script:SudoPwCache.ContainsKey($key)) {
+            $v = [string]$script:SudoPwCache[$key]
+            if (-not [string]::IsNullOrWhiteSpace($v)) { return $v }
+        }
+    } catch {}
+
+    try {
+        $nu = ""
+        $np = ""
+        try { if ($NewUserBox) { $nu = ([string]$NewUserBox.Text).Trim() } } catch { $nu = "" }
+        try { if ($NewPasswordBox) { $np = [string]$NewPasswordBox.Password } } catch { $np = "" }
+
+        if (-not [string]::IsNullOrWhiteSpace($nu) -and ($nu -eq $RemoteUser) -and (-not [string]::IsNullOrWhiteSpace($np))) {
+            $script:SudoPwCache[$key] = $np
+            return $np
+        }
+    } catch {}
+
+    $pw = Show-RemoteUserPasswordDialog -RemoteUser $RemoteUser -RemoteHost $RemoteHost -Port $Port
+    if (-not [string]::IsNullOrWhiteSpace($pw)) {
+        try { $script:SudoPwCache[$key] = $pw } catch {}
+        return $pw
+    }
+
+    return ""
+}
+
+function Find-RemoteP12FilesFast {
+    param(
+        [Parameter(Mandatory=$true)][string]$RemoteHost,
+        [Parameter(Mandatory=$true)][string]$Port,
+        [Parameter(Mandatory=$true)][string]$User,
+        [string]$KeyPath,
+        [string]$SudoPassword = ""
+    )
+
+    $sshExe = Get-SshExePath
+    if (-not $sshExe) {
+        try { if ($script:AppendLog) { $script:AppendLog.Invoke("[ERROR] BackupP12: ssh.exe not found.`r`n") } } catch {}
+        return @()
+    }
+
+    $kh = Get-KnownHostsPathSafe
+
+    $plainCmd = @"
+bash -lc 'set +e;
+find / -maxdepth 5 \( -type d -name incremental_snapshot -prune \) -o \( -type f -name "*.p12" -print \) 2>/dev/null | sed "s/\r//g"'
+"@.Trim()
+
+    $sudoCmd = @"
+bash -lc 'set +e;
+sudo -S -p """" find / -maxdepth 5 \( -type d -name incremental_snapshot -prune \) -o \( -type f -name "*.p12" -print \) 2>/dev/null | sed "s/\r//g"'
+"@.Trim()
+
+    function _RunSSHCapture([string]$remoteCmd,[string]$stdinText,[int]$TimeoutMs=45000) {
+
+        $args = @(
+            "-o","BatchMode=yes",
+            "-o","NumberOfPasswordPrompts=0",
+            "-o","PreferredAuthentications=publickey",
+            "-o","PubkeyAuthentication=yes",
+            "-o","StrictHostKeyChecking=accept-new",
+            "-o","UserKnownHostsFile=$kh",
+            "-o","GlobalKnownHostsFile=NUL",
+            "-p",$Port
+        )
+
+
+        if (-not [string]::IsNullOrWhiteSpace($KeyPath) -and -not $script:SshAgentTouched) {
+            $args += @("-i",$KeyPath)
+        }
+
+        $args += "$User@$RemoteHost"
+        $rc = $remoteCmd.Replace('"','\"')
+        $args += "`"$rc`""
+
+        try { if ($script:AppendLog) { $script:AppendLog.Invoke("[INFO] BackupP12: ssh search starting user=$User host=$RemoteHost port=$Port key=" + $(if($KeyPath){"yes"}else{"no"}) + "`r`n") } } catch {}
+
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $sshExe
+        $psi.Arguments = ($args -join " ")
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError  = $true
+        $psi.RedirectStandardInput  = $true
+        $psi.CreateNoWindow = $true
+
+        $p = New-Object System.Diagnostics.Process
+        $p.StartInfo = $psi
+        $null = $p.Start()
+
+        try {
+            if ($stdinText -ne $null -and $stdinText.Length -gt 0) {
+                if (-not $stdinText.EndsWith("`n")) { $stdinText += "`n" }
+                $p.StandardInput.Write($stdinText)
+            }
+        } catch {}
+        try { $p.StandardInput.Close() } catch {}
+
+        $finished = $false
+        try { $finished = $p.WaitForExit($TimeoutMs) } catch { $finished = $false }
+        if (-not $finished) {
+            try { $p.Kill() } catch {}
+            try { if ($script:AppendLog) { $script:AppendLog.Invoke("[ERROR] BackupP12: ssh search timed out after ${TimeoutMs}ms.`r`n") } } catch {}
+            return [pscustomobject]@{ Exit=124; StdOut=""; StdErr="timeout" }
+        }
+
+        $out = ""; $err = ""
+        try { $out = $p.StandardOutput.ReadToEnd() } catch { $out = "" }
+        try { $err = $p.StandardError.ReadToEnd() } catch { $err = "" }
+
+        $exit = 1
+        try { $exit = [int]$p.ExitCode } catch { $exit = 1 }
+
+        if ($err) {
+            $last = ($err -split "`r?`n" | Where-Object { $_ -and $_.Trim() } | Select-Object -Last 1)
+            if ($last) {
+                try { if ($script:AppendLog) { $script:AppendLog.Invoke("[WARN] BackupP12: ssh stderr(last): $last`r`n") } } catch {}
+            }
+        }
+        try { if ($script:AppendLog) { $script:AppendLog.Invoke("[INFO] BackupP12: ssh exit=$exit stdoutLen=$($out.Length) stderrLen=$($err.Length)`r`n") } } catch {}
+
+        return [pscustomobject]@{ Exit=$exit; StdOut=$out; StdErr=$err }
+    }
+
+    $r1 = _RunSSHCapture $plainCmd "" 45000
+
+    if ($r1.Exit -ne 0 -and [string]::IsNullOrWhiteSpace($r1.StdOut)) {
+        return @("__SSHFAIL__:" + ($r1.StdErr -replace "`r","" -replace "`n"," | ").Trim())
+    }
+
+    $paths1 = @()
+    foreach ($ln in ($r1.StdOut -split "`r?`n")) {
+        $t = $ln.Trim()
+        if ($t) { $paths1 += $t }
+    }
+    $paths1 = $paths1 | Sort-Object -Unique
+
+    if ($paths1.Count -gt 0) {
+        return $paths1
+    }
+
+    if ([string]::IsNullOrWhiteSpace($SudoPassword)) {
+        return @()
+    }
+
+    $paths1 = @()
+    foreach ($ln in ($r1.StdOut -split "`r?`n")) {
+        $t = $ln.Trim()
+        if ($t) { $paths1 += $t }
+    }
+    $paths1 = $paths1 | Sort-Object -Unique
+    if ($paths1.Count -gt 0) { return $paths1 }
+
+    $pw = $SudoPassword
+    if ([string]::IsNullOrWhiteSpace($pw)) { return @() }
+
+    $r2 = _RunSSHCapture $sudoCmd $pw 60000
+
+    if ($r2.Exit -ne 0 -and [string]::IsNullOrWhiteSpace($r2.StdOut)) {
+        return @("__SSHFAIL__:" + ($r2.StdErr -replace "`r","" -replace "`n"," | ").Trim())
+    }
+
+    $paths2 = @()
+    foreach ($ln in ($r2.StdOut -split "`r?`n")) {
+        $t = $ln.Trim()
+        if ($t) { $paths2 += $t }
+    }
+    return ($paths2 | Sort-Object -Unique)
+}
+
+function Get-RemoteSha256 {
+    param(
+        [Parameter(Mandatory=$true)][string]$RemoteHost,
+        [Parameter(Mandatory=$true)][string]$Port,
+        [Parameter(Mandatory=$true)][string]$User,
+        [Parameter(Mandatory=$true)][string]$RemotePath,
+        [string]$KeyPath
+    )
+
+    $cmd = "bash -lc 'sha256sum " + ([string]$RemotePath).Replace("'", "'\''") + " 2>/dev/null | awk `{print `$1}`''"
+    $sshExe = Get-SshExePath
+    if (-not $sshExe) { return "" }
+
+    $kh = Get-KnownHostsPathSafe
+    $args = @(
+        "-o","BatchMode=yes",
+        "-o","NumberOfPasswordPrompts=0",
+        "-o","StrictHostKeyChecking=accept-new",
+        "-o","UserKnownHostsFile=$kh",
+        "-o","GlobalKnownHostsFile=NUL",
+        "-p",$Port
+    )
+    if (-not [string]::IsNullOrWhiteSpace($KeyPath)) { $args += @("-i",$KeyPath) }
+    $args += "$User@$RemoteHost"
+    $args += "`"$($cmd.Replace('"','\"'))`""
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $sshExe
+    $psi.Arguments = ($args -join " ")
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError  = $true
+    $psi.CreateNoWindow = $true
+
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+    $null = $p.Start()
+    $p.WaitForExit(15000) | Out-Null
+
+    $o = ""
+    try { $o = $p.StandardOutput.ReadToEnd() } catch { $o = "" }
+    return ($o.Trim())
+}
+
+function Download-RemoteP12PreserveMetadata {
+    param(
+        [Parameter(Mandatory=$true)][string]$RemoteHost,
+        [Parameter(Mandatory=$true)][string]$Port,
+        [Parameter(Mandatory=$true)][string]$User,
+        [Parameter(Mandatory=$true)][string]$RemotePath,
+        [Parameter(Mandatory=$true)][string]$LocalPath,
+        [string]$KeyPath
+    )
+
+    if (Test-Path -LiteralPath $LocalPath) {
+
+        $remoteHash = Get-RemoteSha256 -RemoteHost $RemoteHost -Port $Port -User $User -RemotePath $RemotePath -KeyPath $KeyPath
+        $localHash  = ""
+        try { $localHash = (Get-FileHash -LiteralPath $LocalPath -Algorithm SHA256).Hash } catch { $localHash = "" }
+
+        if ($remoteHash -and $localHash -and ($remoteHash -ieq $localHash)) {
+            return "identical"
+        }
+
+        $choice = Show-Confirm3ChoiceDialog `
+            -Title "File Exists" `
+            -Header "P12 already exists locally" `
+            -Body ("Local file exists and is different:`r`n`r`n$LocalPath`r`n`r`nOverwrite it?") `
+            -YesText "Overwrite" `
+            -NoText "Skip" `
+            -CancelText "Cancel"
+
+        if ($choice -ne "yes") { return "skipped" }
+    }
+
+    $scpExe = Get-ScpExePath
+    if (-not $scpExe) { return "error" }
+
+    $sshExe = Get-SshExePath
+    if (-not $sshExe) { return "error" }
+
+    $kh = Get-KnownHostsPathSafe
+
+    function _ScpPull([string]$srcRemotePath) {
+        $args = @(
+            "-p",
+            "-P", $Port,
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "UserKnownHostsFile=$kh",
+            "-o", "GlobalKnownHostsFile=NUL"
+        )
+        if (-not [string]::IsNullOrWhiteSpace($KeyPath)) { $args += @("-i", "`"$KeyPath`"") }
+
+        $remoteSpec = "$User@${RemoteHost}:`"$srcRemotePath`""
+        $args += @(
+            $remoteSpec,
+            "`"$LocalPath`""
+        )
+
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $scpExe
+        $psi.Arguments = ($args -join " ")
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError  = $true
+        $psi.CreateNoWindow = $true
+
+        $p = New-Object System.Diagnostics.Process
+        $p.StartInfo = $psi
+        $null = $p.Start()
+        $p.WaitForExit(60000) | Out-Null
+
+        return $p.ExitCode
+    }
+
+    function _RunSudo([string]$remoteCmd,[string]$sudoPw,[int]$TimeoutMs=45000) {
+        $args = @(
+            "-o","BatchMode=yes",
+            "-o","NumberOfPasswordPrompts=0",
+            "-o","StrictHostKeyChecking=accept-new",
+            "-o","UserKnownHostsFile=$kh",
+            "-o","GlobalKnownHostsFile=NUL",
+            "-p",$Port
+        )
+        if (-not [string]::IsNullOrWhiteSpace($KeyPath)) { $args += @("-i",$KeyPath) }
+        $args += "$User@$RemoteHost"
+        $rc = $remoteCmd.Replace('"','\"')
+        $args += "`"$rc`""
+
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $sshExe
+        $psi.Arguments = ($args -join " ")
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError  = $true
+        $psi.RedirectStandardInput  = $true
+        $psi.CreateNoWindow = $true
+
+        $p = New-Object System.Diagnostics.Process
+        $p.StartInfo = $psi
+        $null = $p.Start()
+
+        try {
+            if (-not [string]::IsNullOrWhiteSpace($sudoPw)) {
+                if (-not $sudoPw.EndsWith("`n")) { $sudoPw += "`n" }
+                $p.StandardInput.Write($sudoPw)
+            }
+        } catch {}
+        try { $p.StandardInput.Close() } catch {}
+
+        $p.WaitForExit($TimeoutMs) | Out-Null
+        return $p.ExitCode
+    }
+
+    $exit1 = _ScpPull $RemotePath
+    if ($exit1 -eq 0) {
+        return "copied"
+    }
+
+    $sudoPw = Get-SudoPasswordForRemoteUser -RemoteHost $RemoteHost -Port $Port -RemoteUser $User
+    if ([string]::IsNullOrWhiteSpace($sudoPw)) {
+        return "error"
+    }
+
+    $tmpName = ("server-toolkit-p12-" + [guid]::NewGuid().ToString("N") + ".p12")
+    $tmpPath = "/tmp/$tmpName"
+
+    $escapedSrc = ([string]$RemotePath).Replace("'", "'\''")
+    $escapedTmp = ([string]$tmpPath).Replace("'", "'\''")
+
+    $stageCmd = "bash -lc 'set -e; " +
+                "sudo -S -p """" cp -p -- ''$escapedSrc'' ''$escapedTmp''; " +
+                "sudo -S -p """" chmod 0644 -- ''$escapedTmp''; " +
+                "echo STAGED_OK'"
+
+    $cleanupCmd = "bash -lc 'set +e; sudo -S -p """" rm -f -- ''$escapedTmp'' >/dev/null 2>&1 || true'"
+
+    $staged = $false
+    try {
+        $sx = _RunSudo $stageCmd $sudoPw 60000
+        if ($sx -ne 0) { return "error" }
+        $staged = $true
+
+        $exit2 = _ScpPull $tmpPath
+        if ($exit2 -ne 0) { return "error" }
+
+        return "copied"
+    }
+    finally {
+        if ($staged) {
+            try { _RunSudo $cleanupCmd $sudoPw 20000 | Out-Null } catch {}
+        }
+    }
+}
+
+function Find-P12FilesFast {
+    param(
+        [Parameter(Mandatory=$true)][string]$Root,
+        [int]$MaxDepth = 5
+    )
+
+    $results = New-Object System.Collections.Generic.List[string]
+
+    function Walk([string]$path, [int]$depth) {
+
+        if ($depth -gt $MaxDepth) { return }
+
+        try {
+            if ($path -match '(?i)[\\\/]incremental_snapshot($|[\\\/])') { return }
+        } catch {}
+
+        try {
+            foreach ($f in [System.IO.Directory]::EnumerateFiles($path, "*.p12")) {
+                $results.Add($f)
+            }
+
+            foreach ($d in [System.IO.Directory]::EnumerateDirectories($path)) {
+                Walk $d ($depth + 1)
+            }
+        } catch {}
+    }
+
+    Walk $Root 0
+    return $results
+}
+
+function Copy-P12PreserveMetadata {
+    param(
+        [Parameter(Mandatory=$true)][string]$Source,
+        [Parameter(Mandatory=$true)][string]$Dest
+    )
+
+    if (Test-Path -LiteralPath $Dest) {
+
+        $srcHash = ""
+        $dstHash = ""
+        try { $srcHash = (Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash } catch {}
+        try { $dstHash = (Get-FileHash -LiteralPath $Dest   -Algorithm SHA256).Hash } catch {}
+
+        if ($srcHash -and $dstHash -and ($srcHash -eq $dstHash)) {
+            return "identical"
+        }
+
+        $choice = Show-Confirm3ChoiceDialog `
+            -Title "P12 file exists" `
+            -Header "Destination already exists" `
+            -Body ("A file already exists at:`r`n`r`n$Dest`r`n`r`nIt is different from the source.") `
+            -YesText "Overwrite" `
+            -NoText "Skip" `
+            -CancelText "Cancel"
+
+        if ($choice -ne "yes") { return "skipped" }
+    }
+
+    Copy-Item -LiteralPath $Source -Destination $Dest -Force
+
+    try {
+        $srcItem = Get-Item -LiteralPath $Source -Force
+        $dstItem = Get-Item -LiteralPath $Dest   -Force
+
+        $dstItem.CreationTime  = $srcItem.CreationTime
+        $dstItem.LastWriteTime = $srcItem.LastWriteTime
+        $dstItem.LastAccessTime= $srcItem.LastAccessTime
+
+        $dstItem.Attributes = $srcItem.Attributes
+    } catch {}
+
+    return "copied"
+}
+
+function Show-P12BackupDialog {
+    param(
+        [Parameter(Mandatory=$true)][string[]]$P12Paths
+    )
+
+    $bc = [System.Windows.Media.BrushConverter]::new()
+
+    $w = New-Object System.Windows.Window
+    $w.Title = "Backup P12"
+    $w.Width = 820
+    $w.Height = 560
+    $w.WindowStartupLocation = "CenterOwner"
+    $w.ResizeMode = "NoResize"
+    $w.Owner = $MainWindow
+    $w.Background = $bc.ConvertFromString("#1e1f22")
+    $w.Foreground = $bc.ConvertFromString("#f0f0f0")
+    $w.FontFamily = "Segoe UI"
+
+    try {
+        if ($MainWindow -and $MainWindow.Resources) {
+            if (-not $w.Resources) { $w.Resources = New-Object System.Windows.ResourceDictionary }
+            try { $w.Resources.MergedDictionaries.Add($MainWindow.Resources) | Out-Null } catch {}
+        }
+    } catch {}
+
+    function _TryStyle([string]$key) {
+        try { return $MainWindow.FindResource($key) } catch {}
+        try { return $w.FindResource($key) } catch {}
+        return $null
+    }
+
+    $PrimaryBtnStyle   = _TryStyle "StartButtonStyle"
+    $SecondaryBtnStyle = _TryStyle "SecondaryButtonStyle"
+
+    $root = New-Object System.Windows.Controls.Grid
+    $root.Margin = "18"
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="*"    })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+
+    $hdr = New-Object System.Windows.Controls.TextBlock
+    $hdr.Text = "Select P12 file(s) to back up"
+    $hdr.FontSize = 20
+    $hdr.FontWeight = "SemiBold"
+    $hdr.Margin = "0,0,0,12"
+    $root.Children.Add($hdr) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($hdr,0)
+
+    $panel = New-Object System.Windows.Controls.Border
+    $panel.Background = $bc.ConvertFromString("#25272b")
+    $panel.BorderBrush = $bc.ConvertFromString("#3b3f46")
+    $panel.BorderThickness = "1"
+    $panel.CornerRadius = "6"
+    $panel.Padding = "12"
+    [System.Windows.Controls.Grid]::SetRow($panel,1)
+
+    $inner = New-Object System.Windows.Controls.Grid
+    $inner.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="*"    })) | Out-Null
+    $inner.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+
+    $lv = New-Object System.Windows.Controls.ListView
+    $lv.SelectionMode = "Extended"
+    $lv.Background = $bc.ConvertFromString("#2f3238")
+    $lv.Foreground = $bc.ConvertFromString("#f0f0f0")
+
+    foreach ($p in $P12Paths) { $null = $lv.Items.Add($p) }
+
+    $inner.Children.Add($lv) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($lv,0)
+
+    $destRow = New-Object System.Windows.Controls.Grid
+    $destRow.Margin = "0,12,0,0"
+    $destRow.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width="*" })) | Out-Null
+    $destRow.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width="Auto" })) | Out-Null
+
+    $destBox = New-Object System.Windows.Controls.TextBox
+    $destBox.IsReadOnly = $true
+    $destBox.Height = 26
+    $destBox.Padding = "6,3"
+    $destBox.Text = (Join-Path $env:USERPROFILE "P12-Backups")
+    $destRow.Children.Add($destBox) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($destBox,0)
+
+    $btnBrowse = New-Object System.Windows.Controls.Button
+    $btnBrowse.Content = "Browse..."
+    $btnBrowse.Margin = "10,0,0,0"
+    if ($SecondaryBtnStyle) { $btnBrowse.Style = $SecondaryBtnStyle }
+    $btnBrowse.Add_Click({
+        try {
+            $f = New-Object System.Windows.Forms.FolderBrowserDialog
+            $f.SelectedPath = $destBox.Text
+            if ($f.ShowDialog() -eq "OK") { $destBox.Text = $f.SelectedPath }
+        } catch {}
+    })
+    $destRow.Children.Add($btnBrowse) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($btnBrowse,1)
+
+    $inner.Children.Add($destRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($destRow,1)
+
+    $panel.Child = $inner
+    $root.Children.Add($panel) | Out-Null
+
+    $btnRow = New-Object System.Windows.Controls.StackPanel
+    $btnRow.Orientation = "Horizontal"
+    $btnRow.HorizontalAlignment = "Right"
+    $btnRow.Margin = "0,14,0,0"
+    [System.Windows.Controls.Grid]::SetRow($btnRow,2)
+
+    $btnCancel = New-Object System.Windows.Controls.Button
+    $btnCancel.Content = "Close"
+    if ($SecondaryBtnStyle) { $btnCancel.Style = $SecondaryBtnStyle }
+    $btnCancel.Margin = "0,0,10,0"
+    $btnCancel.Add_Click({ $w.Close() })
+    $btnRow.Children.Add($btnCancel) | Out-Null
+
+    $btnBackup = New-Object System.Windows.Controls.Button
+    $btnBackup.Content = "Backup Selected"
+    if ($PrimaryBtnStyle) { $btnBackup.Style = $PrimaryBtnStyle }
+    $btnBackup.Add_Click({
+        try {
+            $selected = @()
+            foreach ($i in $lv.SelectedItems) { $selected += [string]$i }
+
+            if (-not $selected -or $selected.Count -eq 0) {
+                [System.Windows.MessageBox]::Show($w, "Select one or more P12 files first.", "No Selection",
+                    [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning) | Out-Null
+                return
+            }
+
+            $destRoot = $destBox.Text
+            if ([string]::IsNullOrWhiteSpace($destRoot)) { return }
+
+            try { if (-not (Test-Path -LiteralPath $destRoot)) { New-Item -ItemType Directory -Path $destRoot -Force | Out-Null } } catch {}
+
+            $copied=0; $identical=0; $skipped=0
+
+            $remoteHost = ""; $port=""; $user=""; $keyPath=""
+            try { $remoteHost = ($HostBox.Text).Trim() } catch {}
+            try { $port       = ($PortBox.Text).Trim() } catch {}
+            try { $user       = ($UserBox.Text).Trim() } catch {}
+            try { $keyPath    = ($KeyBox.Text).Trim() } catch {}
+
+            foreach ($remotePath in $selected) {
+                try {
+                    $leaf = Split-Path -Leaf $remotePath
+                    $dst  = Join-Path $destRoot $leaf
+
+                    $r = Download-RemoteP12PreserveMetadata `
+                        -RemoteHost $remoteHost `
+                        -Port $port `
+                        -User $user `
+                        -RemotePath $remotePath `
+                        -LocalPath $dst `
+                        -KeyPath $keyPath
+
+                    switch ($r) {
+                        "copied"    { $copied++ }
+                        "identical" { $identical++ }
+                        default     { $skipped++ }
+                    }
+                } catch { $skipped++ }
+            }
+
+            [System.Windows.MessageBox]::Show(
+                $w,
+                ("Backup complete.`r`n`r`nCopied: $copied`r`nAlready present (identical): $identical`r`nSkipped: $skipped"),
+                "Backup P12",
+                [System.Windows.MessageBoxButton]::OK,
+                [System.Windows.MessageBoxImage]::Information
+            ) | Out-Null
+
+        } catch {}
+    })
+    $btnRow.Children.Add($btnBackup) | Out-Null
+
+    $root.Children.Add($btnRow) | Out-Null
+
+    $w.Content = $root
+    $null = $w.ShowDialog()
+}
+
+function Invoke-P12BackupFlow {
+    try {
+        if (-not $BackupP12Button -or -not $BackupP12Button.IsEnabled) { return }
+
+        $remoteHost = ""; $port=""; $user=""; $keyPath=""
+        try { $remoteHost = ($HostBox.Text).Trim() } catch {}
+        try { $port       = ($PortBox.Text).Trim() } catch {}
+        try { $user       = ($UserBox.Text).Trim() } catch {}
+        try { $keyPath    = ($KeyBox.Text).Trim() } catch {}
+
+        if ([string]::IsNullOrWhiteSpace($remoteHost) -or [string]::IsNullOrWhiteSpace($port) -or [string]::IsNullOrWhiteSpace($user)) {
+            [System.Windows.MessageBox]::Show($MainWindow, "Host / Port / Username are required.", "Backup P12",
+                [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning) | Out-Null
+            return
+        }
+
+        $bc = [System.Windows.Media.BrushConverter]::new()
+        $pw = New-Object System.Windows.Window
+        $pw.Title = "Backup P12"
+        $pw.Width = 560
+        $pw.Height = 170
+        $pw.WindowStartupLocation = "CenterOwner"
+        $pw.ResizeMode = "NoResize"
+        $pw.Owner = $MainWindow
+        $pw.Background = $bc.ConvertFromString("#1e1f22")
+        $pw.Foreground = $bc.ConvertFromString("#f0f0f0")
+        $pw.FontFamily = "Segoe UI"
+        $pw.WindowStyle = "ToolWindow"
+
+        $g = New-Object System.Windows.Controls.Grid
+        $g.Margin = "18"
+        $g.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+        $g.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+
+        $t = New-Object System.Windows.Controls.TextBlock
+        $t.Text = "Please Wait, Searching the server for P12 files..."
+        $t.FontSize = 16
+        $t.FontWeight = "SemiBold"
+        $t.Margin = "0,0,0,12"
+        $g.Children.Add($t) | Out-Null
+        [System.Windows.Controls.Grid]::SetRow($t,0)
+
+        $bar = New-Object System.Windows.Controls.ProgressBar
+        $bar.IsIndeterminate = $true
+        $bar.Height = 18
+        $g.Children.Add($bar) | Out-Null
+        [System.Windows.Controls.Grid]::SetRow($bar,1)
+
+        $pw.Content = $g
+
+        $MainWindow.Cursor = "Wait"
+
+        $found = $null
+
+        function _BkpDbg([string]$m) {
+            try {
+                Add-Content -Path $global:ServerToolkitLogPath -Value (
+                    (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") +
+                    " [BKP12] " + $m + "`r`n"
+                ) -Encoding UTF8 -ErrorAction SilentlyContinue
+            } catch {}
+        }
+
+        _BkpDbg ("Invoke-P12BackupFlow entered host=$remoteHost port=$port user=$user key=" + $(if($keyPath){"yes"}else{"no"}))
+
+        $ui_passphrase = ""
+        try { $ui_passphrase = $PasswordBox.Password } catch { $ui_passphrase = "" }
+        try { _BkpDbg ("Captured ui_passphrase len=" + $ui_passphrase.Length) } catch {}
+
+        $ui_sudoPw = ""
+
+        try { _BkpDbg ("Captured sudoPw len=" + $ui_sudoPw.Length) } catch {}
+        try { _BkpDbg "Starting Task.Run for Find-RemoteP12FilesFast..." } catch {}
+
+        $pw.Show()
+
+        try {
+            Add-Content -Path $global:ServerToolkitLogPath -Value (
+                (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") +
+                " [BKP12] Running search synchronously (STA-safe)`r`n"
+            ) -Encoding UTF8 -ErrorAction SilentlyContinue
+        } catch {}
+
+        $agentOk = Ensure-SshAgentSessionPreStart -KeyPath $keyPath -Passphrase $ui_passphrase
+        if ($agentOk) {
+            $agentOk = Ensure-SshAgentWithKey -KeyPath $keyPath -Passphrase $ui_passphrase
+        }
+
+        if (-not $agentOk) {
+            try { $pw.Close() } catch {}
+            [System.Windows.MessageBox]::Show(
+                $MainWindow,
+                "SSH key is not unlocked or usable. Please unlock the key and retry Backup P12.",
+                "Backup P12",
+                [System.Windows.MessageBoxButton]::OK,
+                [System.Windows.MessageBoxImage]::Warning
+            ) | Out-Null
+            return
+        }
+
+        $found = Find-RemoteP12FilesFast `
+            -RemoteHost $remoteHost `
+            -Port $port `
+            -User $user `
+            -KeyPath $keyPath `
+            -SudoPassword ""
+
+        if (-not $found -or $found.Count -eq 0) {
+            $sudoPw = Get-SudoPasswordForRemoteUser `
+                -RemoteHost $remoteHost `
+                -Port $port `
+                -RemoteUser $user
+
+            if (-not [string]::IsNullOrWhiteSpace($sudoPw)) {
+                $found = Find-RemoteP12FilesFast `
+                    -RemoteHost $remoteHost `
+                    -Port $port `
+                    -User $user `
+                    -KeyPath $keyPath `
+                    -SudoPassword $sudoPw
+            }
+        }
+
+        try { $pw.Close() } catch {}
+        $MainWindow.Cursor = "Arrow"
+
+        try {
+            if ($found -and $found.Count -ge 1 -and ([string]$found[0]) -eq "__NEED_SSHADD__") {
+                [System.Windows.MessageBox]::Show(
+                    $MainWindow,
+                    "Your SSH key is not usable yet (ssh-agent / ssh-add is not ready).`r`n`r`n" +
+                    "Enter the SSH key passphrase (Password / SSH Passphrase field), then retry Backup P12. " +
+                    "If a key-unlock prompt appears, complete it first.",
+                    "Backup P12 - SSH Key Not Ready",
+                    [System.Windows.MessageBoxButton]::OK,
+                    [System.Windows.MessageBoxImage]::Warning
+                ) | Out-Null
+                return
+            }
+        } catch {}
+
+        try { $pw.Close() } catch {}
+        $MainWindow.Cursor = "Arrow"
+
+        try {
+            if ($found -and $found.Count -ge 1 -and ([string]$found[0]).StartsWith("__SSHFAIL__:")) {
+                $detail = ([string]$found[0]).Substring(11)
+                [System.Windows.MessageBox]::Show(
+                    $MainWindow,
+                    "Backup P12 could not authenticate to the server (ssh failed).`r`n`r`nDetails:`r`n$detail",
+                    "Backup P12 - SSH Failed",
+                    [System.Windows.MessageBoxButton]::OK,
+                    [System.Windows.MessageBoxImage]::Error
+                ) | Out-Null
+                return
+            }
+        } catch {}
+
+        if (-not $found -or $found.Count -eq 0) {
+            [System.Windows.MessageBox]::Show(
+                $MainWindow,
+                "No .p12 files were found anywhere under / within depth 5 (excluding folders named incremental_snapshot).",
+                "Backup P12",
+                [System.Windows.MessageBoxButton]::OK,
+                [System.Windows.MessageBoxImage]::Information
+            ) | Out-Null
+            return
+        }
+
+        Show-P12BackupDialog -P12Paths $found
+    }
+    catch {
+        try { $MainWindow.Cursor = "Arrow" } catch {}
+        try {
+            [System.Windows.MessageBox]::Show(
+                $MainWindow,
+                ("Backup P12 crashed:`r`n`r`n" + $_.Exception.Message),
+                "Backup P12",
+                [System.Windows.MessageBoxButton]::OK,
+                [System.Windows.MessageBoxImage]::Error
+            ) | Out-Null
+        } catch {}
+    }
+}
 function Flash-TextBoxWarning {
     param(
         [Parameter(Mandatory=$true)][System.Windows.Controls.TextBox]$Tb,
@@ -1745,8 +2827,36 @@ try {
     }
 } catch {}
 
+
+try {
+    if ($HostBox) {
+        $HostBox.Add_TextChanged({
+            try { Update-OpenServerButtonVisibility } catch {}
+            try { Safe-UpdateBackupP12ButtonState } catch {}
+        })
+    }
+    if ($PortBox) {
+        $PortBox.Add_TextChanged({
+            try { Update-OpenServerButtonVisibility } catch {}
+            try { Safe-UpdateBackupP12ButtonState } catch {}
+        })
+    }
+    if ($UserBox) {
+        $UserBox.Add_TextChanged({
+            try { Update-OpenServerButtonVisibility } catch {}
+            try { Safe-UpdateBackupP12ButtonState } catch {}
+        })
+    }
+    if ($KeyBox) {
+        $KeyBox.Add_TextChanged({
+            try { Update-OpenServerButtonVisibility } catch {}
+        })
+    }
+} catch {}
+
 try { Update-OpenServerButtonVisibility } catch {}
 try { Update-StartButtonState } catch {}
+try { Safe-UpdateBackupP12ButtonState } catch {}
 
 $script:PassToggleHover = $false
 
@@ -2161,12 +3271,14 @@ if ($UploadP12Check -and $P12Panel) {
     $UploadP12Check.Add_Checked({
         try { $P12Panel.IsEnabled = $true } catch {}
         try { Update-StartButtonState } catch {}
+        try { Safe-UpdateBackupP12ButtonState } catch {}
         try { if ($script:AppendLog) { $script:AppendLog.Invoke("DEBUG: UploadP12Check Checked. P12Panel enabled.`r`n") } } catch {}
     })
 
     $UploadP12Check.Add_Unchecked({
         try { $P12Panel.IsEnabled = $false } catch {}
         try { Update-StartButtonState } catch {}
+        try { Safe-UpdateBackupP12ButtonState } catch {}
 
         try { if ($P12PathBox) { $P12PathBox.Text = "" } } catch {}
         try { if ($P12PasswordBox) { $P12PasswordBox.Password = "" } } catch {}
@@ -4008,6 +5120,690 @@ $pp
     return $true
 }
 
+function New-ThemedButtonStyleSafe {
+    param(
+        [Parameter(Mandatory=$true)][string]$Normal,
+        [Parameter(Mandatory=$true)][string]$Hover,
+        [Parameter(Mandatory=$true)][string]$Pressed,
+        [string]$ForegroundHex = "#FFFFFF"
+    )
+
+    $bc = [System.Windows.Media.BrushConverter]::new()
+
+    $style = New-Object System.Windows.Style([System.Windows.Controls.Button])
+
+    $style.Setters.Add((New-Object System.Windows.Setter(
+        [System.Windows.Controls.Control]::BackgroundProperty,
+        $bc.ConvertFromString($Normal)
+    ))) | Out-Null
+
+    $style.Setters.Add((New-Object System.Windows.Setter(
+        [System.Windows.Controls.Control]::ForegroundProperty,
+        $bc.ConvertFromString($ForegroundHex)
+    ))) | Out-Null
+
+    $style.Setters.Add((New-Object System.Windows.Setter(
+        [System.Windows.Controls.Control]::BorderThicknessProperty,
+        (New-Object System.Windows.Thickness(0))
+    ))) | Out-Null
+
+    $style.Setters.Add((New-Object System.Windows.Setter(
+        [System.Windows.Controls.Control]::PaddingProperty,
+        (New-Object System.Windows.Thickness(14,6,14,6))
+    ))) | Out-Null
+
+    $style.Setters.Add((New-Object System.Windows.Setter(
+        [System.Windows.Controls.Control]::CursorProperty,
+        [System.Windows.Input.Cursors]::Hand
+    ))) | Out-Null
+
+    $tpl = New-Object System.Windows.Controls.ControlTemplate([System.Windows.Controls.Button])
+
+    $border = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
+    $border.SetValue(
+        [System.Windows.Controls.Border]::CornerRadiusProperty,
+        (New-Object System.Windows.CornerRadius(4))
+    )
+    $border.SetValue(
+        [System.Windows.Controls.Border]::BackgroundProperty,
+        (New-Object System.Windows.TemplateBindingExtension(
+            [System.Windows.Controls.Control]::BackgroundProperty
+        ))
+    )
+
+    $cp = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ContentPresenter])
+    $cp.SetValue(
+        [System.Windows.Controls.ContentPresenter]::HorizontalAlignmentProperty,
+        [System.Windows.HorizontalAlignment]::Center
+    )
+    $cp.SetValue(
+        [System.Windows.Controls.ContentPresenter]::VerticalAlignmentProperty,
+        [System.Windows.VerticalAlignment]::Center
+    )
+    $cp.SetValue(
+        [System.Windows.Controls.ContentPresenter]::MarginProperty,
+        (New-Object System.Windows.Thickness(4,1,4,1))
+    )
+
+    $border.AppendChild($cp) | Out-Null
+    $tpl.VisualTree = $border
+
+    $tOver = New-Object System.Windows.Trigger
+    $tOver.Property = [System.Windows.Controls.Control]::IsMouseOverProperty
+    $tOver.Value = $true
+    $tOver.Setters.Add((New-Object System.Windows.Setter(
+        [System.Windows.Controls.Control]::BackgroundProperty,
+        $bc.ConvertFromString($Hover)
+    ))) | Out-Null
+
+    $tPress = New-Object System.Windows.Trigger
+    $tPress.Property = [System.Windows.Controls.Primitives.ButtonBase]::IsPressedProperty
+    $tPress.Value = $true
+    $tPress.Setters.Add((New-Object System.Windows.Setter(
+        [System.Windows.Controls.Control]::BackgroundProperty,
+        $bc.ConvertFromString($Pressed)
+    ))) | Out-Null
+
+    $tDis = New-Object System.Windows.Trigger
+    $tDis.Property = [System.Windows.Controls.Control]::IsEnabledProperty
+    $tDis.Value = $false
+    $tDis.Setters.Add((New-Object System.Windows.Setter(
+        [System.Windows.UIElement]::OpacityProperty,
+        0.4
+    ))) | Out-Null
+
+    $tpl.Triggers.Add($tOver)  | Out-Null
+    $tpl.Triggers.Add($tPress) | Out-Null
+    $tpl.Triggers.Add($tDis)   | Out-Null
+
+    $style.Setters.Add((New-Object System.Windows.Setter(
+        [System.Windows.Controls.Control]::TemplateProperty,
+        $tpl
+    ))) | Out-Null
+
+    return $style
+}
+
+function Show-SshKeyDetailsDialog {
+    param(
+        [Parameter(Mandatory=$true)][string]$PrivatePath,
+        [Parameter(Mandatory=$true)][string]$PublicPath
+    )
+
+    try {
+        Add-Content -Path $global:ServerToolkitLogPath -Value (
+            (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") +
+            " [INFO] Show-SshKeyDetailsDialog called priv='$PrivatePath' pub='$PublicPath'`r`n"
+        ) -Encoding UTF8 -ErrorAction SilentlyContinue
+    } catch {}
+
+    if (-not (Test-Path -LiteralPath $PrivatePath)) { return }
+    if (-not (Test-Path -LiteralPath $PublicPath))  { return }
+
+    $pubText = ""
+    try { $pubText = (Get-Content -LiteralPath $PublicPath -Raw).Trim() } catch {}
+
+    $bgDark     = "#1e1f22"
+    $panelBg    = "#25272b"
+    $fgMain     = "#f0f0f0"
+    $fgMuted    = "#b0b0b0"
+    $fgAccent   = "#00a8ff"
+    $fgOk       = "#47d16c"
+    $borderDark = "#3b3f46"
+
+    $btnPrimary    = "#00a8ff"
+    $btnPrimaryH   = "#14b5ff"
+    $btnPrimaryP   = "#0090d0"
+    $btnSecondary  = "#3b3f46"
+    $btnSecondaryH = "#4a4f5a"
+    $btnSecondaryP = "#2f3238"
+
+    function New-ThemedButtonStyle {
+        param(
+            [string]$Normal,
+            [string]$Hover,
+            [string]$Pressed,
+            [string]$ForegroundHex = "#FFFFFF"
+        )
+
+        return (New-ThemedButtonStyleSafe `
+            -Normal $Normal `
+            -Hover $Hover `
+            -Pressed $Pressed `
+            -ForegroundHex $ForegroundHex)
+    }
+
+    $PrimaryBtnStyle   = New-ThemedButtonStyle $btnPrimary   $btnPrimaryH   $btnPrimaryP
+    $SecondaryBtnStyle = New-ThemedButtonStyle $btnSecondary $btnSecondaryH $btnSecondaryP
+
+    function New-CopyRow {
+        param(
+            [Parameter(Mandatory=$true)][System.Windows.Controls.StackPanel]$Parent,
+            [Parameter(Mandatory=$true)][string]$Label,
+            [Parameter(Mandatory=$true)][string]$Value,
+            [Parameter(Mandatory=$true)][string]$Tooltip
+        )
+
+        $safeValue = if ([string]::IsNullOrWhiteSpace($Value)) { "(not available)" } else { $Value }
+
+        $lbl = New-Object System.Windows.Controls.TextBlock
+        $lbl.Text = $Label
+        $lbl.Foreground = ([System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent))
+        $lbl.FontWeight = "SemiBold"
+        $lbl.Margin = "0,0,0,4"
+        $Parent.Children.Add($lbl) | Out-Null
+
+        $row = New-Object System.Windows.Controls.Border
+        $row.Tag = $safeValue
+        $row.ToolTip = $Tooltip
+        $row.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00000000")
+        $row.CornerRadius = "4"
+        $row.Padding = "2,2"
+        $row.Margin = "0,0,0,12"
+        $row.Cursor = [System.Windows.Input.Cursors]::Hand
+
+        $inner = New-Object System.Windows.Controls.StackPanel
+        $inner.Orientation = "Horizontal"
+
+        $txt = New-Object System.Windows.Controls.TextBlock
+        $txt.Text = $safeValue
+        $txt.FontFamily = "Consolas"
+        $txt.TextWrapping = "Wrap"
+        $txt.MaxWidth = 560
+        $txt.Foreground = ([System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMuted))
+        $txt.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+
+        $ico = New-Object System.Windows.Controls.TextBlock
+        $ico.FontFamily = "Segoe MDL2 Assets"
+        $ico.Text = [char]0xE8C8
+        $ico.FontSize = 16
+        $ico.Margin = "10,0,0,0"
+        $ico.Foreground = ([System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent))
+        $ico.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+
+        $inner.Children.Add($txt) | Out-Null
+        $inner.Children.Add($ico) | Out-Null
+        $row.Child = $inner
+
+        try { $row.Resources["__CopyIcon"] = $ico } catch { try { $row.Resources.Add("__CopyIcon",$ico) } catch {} }
+
+        $Parent.Children.Add($row) | Out-Null
+
+        $hoverBg  = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#22333842")
+        $normalBg = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00000000")
+
+        $row.Add_MouseEnter({ param($s,$e) try { $s.Background = $hoverBg } catch {} })
+        $row.Add_MouseLeave({ param($s,$e) try { $s.Background = $normalBg } catch {} })
+
+        $row.Add_MouseLeftButtonUp({
+            param($s,$e)
+            try { if ($e) { $e.Handled = $true } } catch {}
+
+            try {
+                $val = ""
+                try { $val = [string]$s.Tag } catch { $val = "" }
+                if ([string]::IsNullOrWhiteSpace($val)) { return }
+
+                try {
+                    [System.Windows.Clipboard]::SetText($val)
+                } catch {
+                    try { [System.Windows.Clipboard]::SetDataObject($val, $true) } catch {}
+                }
+
+                $icon2 = $null
+                try { $icon2 = $s.Resources["__CopyIcon"] } catch { $icon2 = $null }
+
+                if ($icon2 -and ($icon2 -is [System.Windows.Controls.TextBlock])) {
+
+                    $icon2.Text = [char]0xE73E
+                    $icon2.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgOk)
+
+                    $timer = New-Object System.Windows.Threading.DispatcherTimer
+                    $timer.Interval = [TimeSpan]::FromMilliseconds(650)
+                    $timer.Tag = $icon2
+
+                    $timer.Add_Tick({
+                        param($sender,$evt)
+                        try {
+                            $sender.Tag.Text = [char]0xE8C8
+                            $sender.Tag.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
+                        } catch {}
+                        try { $sender.Stop() } catch {}
+                    })
+
+                    $timer.Start()
+                }
+
+            } catch {}
+        })
+    }
+
+    $w = New-Object System.Windows.Window
+    $w.Title = "SSH Key Pair Details"
+    $w.Width = 760
+    $w.Height = 520
+    $w.WindowStartupLocation = "CenterOwner"
+    $w.ResizeMode = "NoResize"
+
+    $w.Owner = $MainWindow
+
+    try { $w.Topmost = $true } catch {}
+    try { $w.Activate() | Out-Null } catch {}
+    try { $w.Topmost = $false } catch {}
+
+    $w.Background = ([System.Windows.Media.BrushConverter]::new().ConvertFromString($bgDark))
+    $w.Foreground = ([System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMain))
+    $w.FontFamily = "Segoe UI"
+
+    $root = New-Object System.Windows.Controls.Grid
+    $root.Margin = "18"
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="*" }))    | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+
+    $hdr = New-Object System.Windows.Controls.TextBlock
+    $hdr.Text = "SSH Key Pair Created Successfully"
+    $hdr.FontSize = 20
+    $hdr.FontWeight = "SemiBold"
+    $hdr.Margin = "0,0,0,12"
+    $root.Children.Add($hdr) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($hdr,0)
+
+    $border = New-Object System.Windows.Controls.Border
+    $border.Background = ([System.Windows.Media.BrushConverter]::new().ConvertFromString($panelBg))
+    $border.BorderBrush = ([System.Windows.Media.BrushConverter]::new().ConvertFromString($borderDark))
+    $border.BorderThickness = "1"
+    $border.CornerRadius = "6"
+    $border.Padding = "14"
+
+    $stack = New-Object System.Windows.Controls.StackPanel
+    New-CopyRow $stack "Private Key Path:" $PrivatePath "Click to copy private key path"
+    New-CopyRow $stack "Public Key Path:"  $PublicPath  "Click to copy public key path"
+    New-CopyRow $stack "Public Key:"       $pubText     "Click to copy public key (paste into Hetzner / VPS)"
+
+    $border.Child = $stack
+    $root.Children.Add($border) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($border,1)
+
+    $btnRow = New-Object System.Windows.Controls.StackPanel
+    $btnRow.Orientation = "Horizontal"
+    $btnRow.HorizontalAlignment = "Right"
+    $btnRow.Margin = "0,14,0,0"
+
+    $btnCopyAll = New-Object System.Windows.Controls.Button
+    $btnCopyAll.Content = "Copy Details"
+    $btnCopyAll.Style = $SecondaryBtnStyle
+    $btnCopyAll.Margin = "0,0,10,0"
+    $btnCopyAll.Add_Click({
+        try {
+            $txt = @(
+                "Private Key: $PrivatePath"
+                "Public Key:  $PublicPath"
+                ""
+                $pubText
+            ) -join "`r`n"
+            [System.Windows.Clipboard]::SetText($txt)
+        } catch {}
+    })
+
+    $btnOk = New-Object System.Windows.Controls.Button
+    $btnOk.Content = "OK"
+    $btnOk.Style = $PrimaryBtnStyle
+    $btnOk.Add_Click({ $w.Close() })
+
+    $btnRow.Children.Add($btnCopyAll) | Out-Null
+    $btnRow.Children.Add($btnOk) | Out-Null
+
+    $root.Children.Add($btnRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($btnRow,2)
+
+    $w.Content = $root
+    $null = $w.ShowDialog()
+}
+
+function Show-CreateSshKeyDialog {
+
+    $sshDir = Join-Path $env:USERPROFILE ".ssh"
+    if (-not (Test-Path $sshDir)) {
+        New-Item -ItemType Directory -Path $sshDir | Out-Null
+    }
+
+    $bc = [System.Windows.Media.BrushConverter]::new()
+
+    $w = New-Object System.Windows.Window
+    $w.Title = "Create SSH Key Pair"
+    $w.Width = 740
+    $w.Height = 360
+    $w.WindowStartupLocation = "CenterOwner"
+    $w.ResizeMode = "NoResize"
+    $w.Owner = $MainWindow
+    $w.Background = $bc.ConvertFromString("#1e1f22")
+    $w.Foreground = $bc.ConvertFromString("#f0f0f0")
+    $w.FontFamily = "Segoe UI"
+
+    try {
+        if ($MainWindow -and $MainWindow.Resources) {
+            if (-not $w.Resources) { $w.Resources = New-Object System.Windows.ResourceDictionary }
+            try { $w.Resources.MergedDictionaries.Add($MainWindow.Resources) | Out-Null } catch {}
+        }
+    } catch {}
+
+    function _TryStyle([string]$key) {
+        try { return $MainWindow.FindResource($key) } catch {}
+        try { return $w.FindResource($key) } catch {}
+        return $null
+    }
+
+    $SecondaryBtnStyle = _TryStyle "SecondaryButtonStyle"
+    $StartBtnStyle     = _TryStyle "StartButtonStyle"
+
+    # Root grid with rows that MATCH our SetRow() calls
+    $root = New-Object System.Windows.Controls.Grid
+    $root.Margin = "18"
+
+    # Row 0: Header
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    # Row 1: Name label
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    # Row 2: Name box
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    # Row 3: Pass label
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    # Row 4: Pass row
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    # Row 5: Path label
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    # Row 6: Path row
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    # Row 7: Buttons row
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="*"    })) | Out-Null
+
+    # Header
+    $hdr = New-Object System.Windows.Controls.TextBlock
+    $hdr.Text = "Create SSH Key Pair"
+    $hdr.FontSize = 20
+    $hdr.FontWeight = "SemiBold"
+    $hdr.Margin = "0,0,0,14"
+    $root.Children.Add($hdr) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($hdr, 0)
+
+    # Name label
+    $lblName = New-Object System.Windows.Controls.TextBlock
+    $lblName.Text = "SSH Key Name:"
+    $lblName.FontWeight = "SemiBold"
+    $lblName.Margin = "0,0,0,6"
+    $root.Children.Add($lblName) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($lblName, 1)
+
+    # Name box
+    $nameBox = New-Object System.Windows.Controls.TextBox
+    $nameBox.ToolTip  = "Base name for the key files (example: myserver)"
+    $nameBox.MinWidth = 520
+    $nameBox.Height   = 28
+    $nameBox.Padding  = "6,3"
+    $nameBox.Margin   = "0,0,0,14"
+    $root.Children.Add($nameBox) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($nameBox, 2)
+
+    # Pass label
+    $lblPass = New-Object System.Windows.Controls.TextBlock
+    $lblPass.Text = "Passphrase:"
+    $lblPass.Margin = "0,0,0,6"
+    $root.Children.Add($lblPass) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($lblPass, 3)
+
+    # Pass row: PasswordBox + Reveal TextBox + Toggle
+    $passGrid = New-Object System.Windows.Controls.Grid
+    $passGrid.Margin = "0,0,0,14"
+    $passGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width="*"   })) | Out-Null
+    $passGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width="Auto"})) | Out-Null
+
+    $pwBox = New-Object System.Windows.Controls.PasswordBox
+    $pwBox.MinWidth = 520
+    $pwBox.Height   = 28
+    $pwBox.Padding  = "6,3"
+    $pwBox.Margin   = "0,0,10,0"
+    $passGrid.Children.Add($pwBox) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($pwBox, 0)
+
+    $pwReveal = New-Object System.Windows.Controls.TextBox
+    $pwReveal.MinWidth  = 520
+    $pwReveal.Height    = 28
+    $pwReveal.Padding   = "6,3"
+    $pwReveal.Margin    = "0,0,10,0"
+    $pwReveal.Visibility = "Collapsed"
+    $passGrid.Children.Add($pwReveal) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($pwReveal, 0)
+
+    $toggle = New-Object System.Windows.Controls.Primitives.ToggleButton
+    $toggle.Width = 34
+    $toggle.Height = 28
+    $toggle.VerticalAlignment = "Center"
+    $toggle.ToolTip = "Show / hide passphrase"
+
+    try {
+        $toggle.Background  = $bc.ConvertFromString("#2f3238")
+        $toggle.BorderBrush = $bc.ConvertFromString("#2f3238")
+        $toggle.BorderThickness = "0"
+        $toggle.Padding = "4"
+    } catch {}
+
+    $eyeIcon = New-Object System.Windows.Controls.TextBlock
+    $eyeIcon.FontFamily = "Segoe MDL2 Assets"
+    $eyeIcon.Text = [char]0xE890   # eye
+    $eyeIcon.FontSize = 14
+    $eyeIcon.VerticalAlignment = "Center"
+    $eyeIcon.HorizontalAlignment = "Center"
+    $eyeIcon.Foreground = $bc.ConvertFromString("#f0f0f0")
+
+    $toggle.Content = $eyeIcon
+
+    $toggle.Add_Checked({
+        try { $pwReveal.Text = $pwBox.Password } catch {}
+        try { $pwBox.Visibility = "Collapsed" } catch {}
+        try { $pwReveal.Visibility = "Visible" } catch {}
+        try { $eyeIcon.Text = [char]0xE72E } catch {}  # eye-off
+    })
+
+    $toggle.Add_Unchecked({
+        try { $pwBox.Password = $pwReveal.Text } catch {}
+        try { $pwReveal.Visibility = "Collapsed" } catch {}
+        try { $pwBox.Visibility = "Visible" } catch {}
+        try { $eyeIcon.Text = [char]0xE890 } catch {}  # eye
+    })
+
+    $passGrid.Children.Add($toggle) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($toggle, 1)
+
+    $root.Children.Add($passGrid) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($passGrid, 4)
+
+    # Path label
+    $lblPath = New-Object System.Windows.Controls.TextBlock
+    $lblPath.Text = "Save Location:"
+    $lblPath.Margin = "0,0,0,6"
+    $root.Children.Add($lblPath) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($lblPath, 5)
+
+    # Path row
+    $pathRow = New-Object System.Windows.Controls.Grid
+    $pathRow.Margin = "0,0,0,0"
+    $pathRow.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width="*"   })) | Out-Null
+    $pathRow.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width="Auto"})) | Out-Null
+
+    $pathBox = New-Object System.Windows.Controls.TextBox
+    $pathBox.Text = $sshDir
+    $pathBox.IsReadOnly = $true
+    $pathBox.MinWidth = 520
+    $pathBox.Height   = 28
+    $pathBox.Padding  = "6,3"
+    $pathBox.Margin   = "0,0,10,0"
+    $pathRow.Children.Add($pathBox) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($pathBox, 0)
+
+    $browseBtn = New-Object System.Windows.Controls.Button
+    $browseBtn.Content = "Browse..."
+    $browseBtn.Padding = "10,4"
+    if ($SecondaryBtnStyle) { $browseBtn.Style = $SecondaryBtnStyle }
+
+    $browseBtn.Add_Click({
+        try {
+            $f = New-Object System.Windows.Forms.FolderBrowserDialog
+            $f.SelectedPath = $pathBox.Text
+            if ($f.ShowDialog() -eq "OK") {
+                $pathBox.Text = $f.SelectedPath
+            }
+        } catch {}
+    })
+
+    $pathRow.Children.Add($browseBtn) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($browseBtn, 1)
+
+    $root.Children.Add($pathRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($pathRow, 6)
+
+    # Buttons row
+    $btnRow = New-Object System.Windows.Controls.StackPanel
+    $btnRow.Orientation = "Horizontal"
+    $btnRow.HorizontalAlignment = "Right"
+    $btnRow.VerticalAlignment = "Bottom"
+    $btnRow.Margin = "0,16,0,0"
+
+    $cancel = New-Object System.Windows.Controls.Button
+    $cancel.Content = "Cancel"
+    $cancel.Margin = "0,0,10,0"
+    if ($SecondaryBtnStyle) { $cancel.Style = $SecondaryBtnStyle }
+    $cancel.Add_Click({ try { $w.Close() } catch {} })
+
+    $create = New-Object System.Windows.Controls.Button
+    $create.Content = "Create SSH"
+    if ($StartBtnStyle) { $create.Style = $StartBtnStyle }
+
+    $create.Add_Click({
+        try {
+            $name = ""
+            try { $name = $nameBox.Text.Trim() } catch { $name = "" }
+
+            if (-not $name) {
+                [System.Windows.MessageBox]::Show($w, "Key name is required.", "Missing Name",
+                    [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning) | Out-Null
+                return
+            }
+
+            $pp = ""
+            try {
+                if ($pwBox.Visibility -eq "Visible") { $pp = $pwBox.Password } else { $pp = $pwReveal.Text }
+            } catch { $pp = "" }
+
+            if ([string]::IsNullOrWhiteSpace($pp)) {
+                [System.Windows.MessageBox]::Show($w, "Passphrase is required. Please enter a passphrase.", "Passphrase Required",
+                    [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning) | Out-Null
+                return
+            }
+
+            $base = Join-Path $pathBox.Text "$name-ssh"
+            $priv = $base
+            $pub  = "$base.pub"
+
+            if ((Test-Path $priv) -or (Test-Path $pub)) {
+
+                $res = [System.Windows.MessageBox]::Show(
+                    $w,
+                    "One or more files already exist:`r`n$priv`r`n$pub`r`n`r`nOverwrite?",
+                    "Overwrite SSH Key?",
+                    [System.Windows.MessageBoxButton]::YesNo,
+                    [System.Windows.MessageBoxImage]::Warning
+                )
+
+                if ($res -ne [System.Windows.MessageBoxResult]::Yes) {
+                    return
+                }
+
+                try { Remove-Item -LiteralPath $priv -Force -ErrorAction SilentlyContinue } catch {}
+                try { Remove-Item -LiteralPath $pub  -Force -ErrorAction SilentlyContinue } catch {}
+            }
+
+
+            $sshKeygen = "ssh-keygen"
+            $comment = $name
+            & $sshKeygen -t ed25519 -f "$priv" -N "$pp" -C "$comment" -q | Out-Null
+
+
+            try { $KeyBox.Text = $priv } catch {}
+            try { $PasswordBox.Password = $pp } catch {}
+            try { $w.Close() } catch {}
+
+            try {
+                $priv2 = [string]$priv
+                $pub2  = [string]$pub
+
+                try {
+                    Add-Content -Path $global:ServerToolkitLogPath -Value (
+                        (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") +
+                        " [INFO] Scheduling SSH details dialog priv='$priv2' pub='$pub2'`r`n"
+                    ) -Encoding UTF8 -ErrorAction SilentlyContinue
+                } catch {}
+
+                $actionShow = [Action[object,object]]{
+                    param($pPriv, $pPub)
+                    try {
+                        $p1 = [string]$pPriv
+                        $p2 = [string]$pPub
+
+                        if ([string]::IsNullOrWhiteSpace($p1) -or [string]::IsNullOrWhiteSpace($p2)) {
+                            throw "Details dialog received empty path(s). priv='$p1' pub='$p2'"
+                        }
+
+                        Show-SshKeyDetailsDialog -PrivatePath $p1 -PublicPath $p2
+                    } catch {
+                        try {
+                            Add-Content -Path $global:ServerToolkitLogPath -Value (
+                                (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") +
+                                " [UIERR] Show-SshKeyDetailsDialog failed: " + $_.Exception.ToString() + "`r`n"
+                            ) -Encoding UTF8 -ErrorAction SilentlyContinue
+                        } catch {}
+                        try {
+                            [System.Windows.MessageBox]::Show(
+                                $MainWindow,
+                                ("SSH Key was created, but details window failed to open.`r`n`r`n" + $_.Exception.Message),
+                                "SSH Key Created",
+                                [System.Windows.MessageBoxButton]::OK,
+                                [System.Windows.MessageBoxImage]::Warning
+                            ) | Out-Null
+                        } catch {}
+                    }
+                }
+
+                $null = $script:UiDispatcher.BeginInvoke($actionShow, [object[]]@($priv2, $pub2))
+            } catch {}
+        } catch {
+            try {
+                Add-Content -Path $global:ServerToolkitLogPath -Value (
+                    (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") +
+                    " [UIERR] Create SSH Key dialog inner create failed: " +
+                    $_.Exception.ToString() + "`r`n"
+                ) -Encoding UTF8 -ErrorAction SilentlyContinue
+            } catch {}
+            try {
+                [System.Windows.MessageBox]::Show($w, ("Failed to create key:`r`n`r`n" + $_.Exception.Message),
+                    "Create SSH Key", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error) | Out-Null
+            } catch {}
+        }
+    })
+
+    $btnRow.Children.Add($cancel) | Out-Null
+    $btnRow.Children.Add($create) | Out-Null
+
+    $root.Children.Add($btnRow) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($btnRow, 7)
+
+    $w.Content = $root
+
+    try { $w.Add_ContentRendered({ try { $nameBox.Focus() } catch {} }) | Out-Null } catch {}
+
+    $null = $w.ShowDialog()
+}
+
 function Show-P12PasswordDialog {
     param(
         [Parameter(Mandatory=$true)][string]$P12Path
@@ -4029,54 +5825,8 @@ function Show-P12PasswordDialog {
     $btnSecondaryH = "#4a4f5a"
     $btnSecondaryP = "#2f3238"
 
-    function New-ThemedButtonStyle {
-        param([string]$Normal,[string]$Hover,[string]$Pressed,[string]$ForegroundHex="#FFFFFF")
-
-        $style = New-Object System.Windows.Style([System.Windows.Controls.Button])
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Normal))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::ForegroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($ForegroundHex))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BorderThicknessProperty, (New-Object System.Windows.Thickness(0))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::PaddingProperty, (New-Object System.Windows.Thickness(14,6,14,6))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::CursorProperty, [System.Windows.Input.Cursors]::Hand))) | Out-Null
-
-        $tpl = New-Object System.Windows.Controls.ControlTemplate([System.Windows.Controls.Button])
-        $border = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
-        $border.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, (New-Object System.Windows.CornerRadius(4)))
-        $border.SetValue([System.Windows.Controls.Border]::BackgroundProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Control]::BackgroundProperty)))
-
-        $cp = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ContentPresenter])
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::MarginProperty, (New-Object System.Windows.Thickness(4,1,4,1)))
-
-        $border.AppendChild($cp) | Out-Null
-        $tpl.VisualTree = $border
-
-        $tOver = New-Object System.Windows.Trigger
-        $tOver.Property = [System.Windows.Controls.Control]::IsMouseOverProperty
-        $tOver.Value = $true
-        $tOver.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Hover))))) | Out-Null
-
-        $tPress = New-Object System.Windows.Trigger
-        $tPress.Property = [System.Windows.Controls.Primitives.ButtonBase]::IsPressedProperty
-        $tPress.Value = $true
-        $tPress.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Pressed))))) | Out-Null
-
-        $tDis = New-Object System.Windows.Trigger
-        $tDis.Property = [System.Windows.Controls.Control]::IsEnabledProperty
-        $tDis.Value = $false
-        $tDis.Setters.Add((New-Object System.Windows.Setter([System.Windows.UIElement]::OpacityProperty, 0.4))) | Out-Null
-
-        $tpl.Triggers.Add($tOver)  | Out-Null
-        $tpl.Triggers.Add($tPress) | Out-Null
-        $tpl.Triggers.Add($tDis)   | Out-Null
-
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::TemplateProperty, $tpl))) | Out-Null
-        return $style
-    }
-
-    $PrimaryBtnStyle   = New-ThemedButtonStyle -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
-    $SecondaryBtnStyle = New-ThemedButtonStyle -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
+    $PrimaryBtnStyle   = New-ThemedButtonStyleSafe -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
+    $SecondaryBtnStyle = New-ThemedButtonStyleSafe -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
 
     $w = New-Object System.Windows.Window
     $w.Title = "P12 Password (Local Only)"
@@ -4113,7 +5863,7 @@ function Show-P12PasswordDialog {
     $hdr.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgWarning)
 
     $hdrRow.Children.Add($icon) | Out-Null
-    $hdrRow.Children.Add($hdr) | Out-Null
+    $hdrRow.Children.Add($hdr)  | Out-Null
     $root.Children.Add($hdrRow) | Out-Null
     [System.Windows.Controls.Grid]::SetRow($hdrRow, 0)
 
@@ -4234,6 +5984,9 @@ function Show-PpkHelpDialog {
 
     $borderDark    = "#3b3f46"
 
+    $PrimaryBtnStyle   = New-ThemedButtonStyleSafe -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
+    $SecondaryBtnStyle = New-ThemedButtonStyleSafe -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
+
     $w = New-Object System.Windows.Window
     $w.Title = "PuTTY Key Not Supported"
     $w.Width = 720
@@ -4247,64 +6000,9 @@ function Show-PpkHelpDialog {
 
     $root = New-Object System.Windows.Controls.Grid
     $root.Margin = "18"
-    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
-    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "*"    })) | Out-Null
-    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
-    function New-ThemedButtonStyle {
-        param(
-            [string]$Normal,
-            [string]$Hover,
-            [string]$Pressed,
-            [string]$ForegroundHex = "#FFFFFF"
-        )
-
-        $style = New-Object System.Windows.Style([System.Windows.Controls.Button])
-
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Normal))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::ForegroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($ForegroundHex))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BorderThicknessProperty, (New-Object System.Windows.Thickness(0))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::PaddingProperty, (New-Object System.Windows.Thickness(14,6,14,6))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::CursorProperty, [System.Windows.Input.Cursors]::Hand)) ) | Out-Null
-
-        $tpl = New-Object System.Windows.Controls.ControlTemplate([System.Windows.Controls.Button])
-
-        $border = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
-        $border.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, (New-Object System.Windows.CornerRadius(4)))
-        $border.SetValue([System.Windows.Controls.Border]::BackgroundProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Control]::BackgroundProperty)))
-
-        $cp = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ContentPresenter])
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::MarginProperty, (New-Object System.Windows.Thickness(4,1,4,1)))
-
-        $border.AppendChild($cp) | Out-Null
-        $tpl.VisualTree = $border
-
-        $tOver = New-Object System.Windows.Trigger
-        $tOver.Property = [System.Windows.Controls.Control]::IsMouseOverProperty
-        $tOver.Value = $true
-        $tOver.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Hover))))) | Out-Null
-
-        $tPress = New-Object System.Windows.Trigger
-        $tPress.Property = [System.Windows.Controls.Primitives.ButtonBase]::IsPressedProperty
-        $tPress.Value = $true
-        $tPress.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Pressed))))) | Out-Null
-
-        $tDis = New-Object System.Windows.Trigger
-        $tDis.Property = [System.Windows.Controls.Control]::IsEnabledProperty
-        $tDis.Value = $false
-        $tDis.Setters.Add((New-Object System.Windows.Setter([System.Windows.UIElement]::OpacityProperty, 0.4))) | Out-Null
-
-        $tpl.Triggers.Add($tOver) | Out-Null
-        $tpl.Triggers.Add($tPress) | Out-Null
-        $tpl.Triggers.Add($tDis) | Out-Null
-
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::TemplateProperty, $tpl))) | Out-Null
-        return $style
-    }
-
-    $PrimaryBtnStyle   = New-ThemedButtonStyle -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
-    $SecondaryBtnStyle = New-ThemedButtonStyle -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="*"    })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
 
     $hdrRow = New-Object System.Windows.Controls.StackPanel
     $hdrRow.Orientation = "Horizontal"
@@ -4324,8 +6022,7 @@ function Show-PpkHelpDialog {
     $hdr.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgWarning)
 
     $hdrRow.Children.Add($icon) | Out-Null
-    $hdrRow.Children.Add($hdr) | Out-Null
-
+    $hdrRow.Children.Add($hdr)  | Out-Null
     $root.Children.Add($hdrRow) | Out-Null
     [System.Windows.Controls.Grid]::SetRow($hdrRow, 0)
 
@@ -4345,9 +6042,7 @@ function Show-PpkHelpDialog {
     $t1 = New-Object System.Windows.Controls.TextBlock
     $t1.TextWrapping = "Wrap"
     $t1.Margin = "0,0,0,10"
-    $t1.Text =
-        "This toolkit requires a standard OpenSSH private key. " +
-        "PuTTY (.ppk) keys cannot be used directly."
+    $t1.Text = "This toolkit requires a standard OpenSSH private key. PuTTY (.ppk) keys cannot be used directly."
     $body.Children.Add($t1) | Out-Null
 
     $lblSel = New-Object System.Windows.Controls.TextBlock
@@ -4375,8 +6070,7 @@ function Show-PpkHelpDialog {
     $steps = New-Object System.Windows.Controls.TextBlock
     $steps.TextWrapping = "Wrap"
     $steps.Margin = "0,0,0,10"
-    $steps.Text =
-@"
+    $steps.Text = @"
 1) Open PuTTYgen
 
 2) Conversions -> Import Key
@@ -4387,6 +6081,7 @@ function Show-PpkHelpDialog {
 4) Conversions -> Export OpenSSH key (force new file format)
 "@
     $body.Children.Add($steps) | Out-Null
+
     $lblRec = New-Object System.Windows.Controls.TextBlock
     $lblRec.Text = "Recommended filename:"
     $lblRec.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
@@ -4481,54 +6176,8 @@ function Show-P12ValidatedDialog {
     $btnSecondaryH = "#4a4f5a"
     $btnSecondaryP = "#2f3238"
 
-    function New-ThemedButtonStyle {
-        param([string]$Normal,[string]$Hover,[string]$Pressed,[string]$ForegroundHex="#FFFFFF")
-
-        $style = New-Object System.Windows.Style([System.Windows.Controls.Button])
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Normal))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::ForegroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($ForegroundHex))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BorderThicknessProperty, (New-Object System.Windows.Thickness(0))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::PaddingProperty, (New-Object System.Windows.Thickness(14,6,14,6))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::CursorProperty, [System.Windows.Input.Cursors]::Hand))) | Out-Null
-
-        $tpl = New-Object System.Windows.Controls.ControlTemplate([System.Windows.Controls.Button])
-        $border = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
-        $border.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, (New-Object System.Windows.CornerRadius(4)))
-        $border.SetValue([System.Windows.Controls.Border]::BackgroundProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Control]::BackgroundProperty)))
-
-        $cp = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ContentPresenter])
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::MarginProperty, (New-Object System.Windows.Thickness(4,1,4,1)))
-
-        $border.AppendChild($cp) | Out-Null
-        $tpl.VisualTree = $border
-
-        $tOver = New-Object System.Windows.Trigger
-        $tOver.Property = [System.Windows.Controls.Control]::IsMouseOverProperty
-        $tOver.Value = $true
-        $tOver.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Hover))))) | Out-Null
-
-        $tPress = New-Object System.Windows.Trigger
-        $tPress.Property = [System.Windows.Controls.Primitives.ButtonBase]::IsPressedProperty
-        $tPress.Value = $true
-        $tPress.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Pressed))))) | Out-Null
-
-        $tDis = New-Object System.Windows.Trigger
-        $tDis.Property = [System.Windows.Controls.Control]::IsEnabledProperty
-        $tDis.Value = $false
-        $tDis.Setters.Add((New-Object System.Windows.Setter([System.Windows.UIElement]::OpacityProperty, 0.4))) | Out-Null
-
-        $tpl.Triggers.Add($tOver)  | Out-Null
-        $tpl.Triggers.Add($tPress) | Out-Null
-        $tpl.Triggers.Add($tDis)   | Out-Null
-
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::TemplateProperty, $tpl))) | Out-Null
-        return $style
-    }
-
-    $PrimaryBtnStyle   = New-ThemedButtonStyle -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
-    $SecondaryBtnStyle = New-ThemedButtonStyle -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
+    $PrimaryBtnStyle   = New-ThemedButtonStyleSafe -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
+    $SecondaryBtnStyle = New-ThemedButtonStyleSafe -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
 
     $shownAlias = $Alias
     if ([string]::IsNullOrWhiteSpace($shownAlias)) { $shownAlias = "(none)" }
@@ -4549,9 +6198,9 @@ function Show-P12ValidatedDialog {
 
     $root = New-Object System.Windows.Controls.Grid
     $root.Margin = "18"
-    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
-    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "*"    })) | Out-Null
-    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="*"    })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
 
     $hdrRow = New-Object System.Windows.Controls.StackPanel
     $hdrRow.Orientation = "Horizontal"
@@ -4571,7 +6220,7 @@ function Show-P12ValidatedDialog {
     $hdr.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgOk)
 
     $hdrRow.Children.Add($icon) | Out-Null
-    $hdrRow.Children.Add($hdr) | Out-Null
+    $hdrRow.Children.Add($hdr)  | Out-Null
     $root.Children.Add($hdrRow) | Out-Null
     [System.Windows.Controls.Grid]::SetRow($hdrRow, 0)
 
@@ -4633,13 +6282,7 @@ function Show-P12ValidatedDialog {
     $btnCopyAlias.Content = "Copy Alias"
     $btnCopyAlias.Style = $SecondaryBtnStyle
     $btnCopyAlias.Margin = "0,0,10,0"
-    $btnCopyAlias.Add_Click({
-        try {
-            $a = $shownAlias
-            if ([string]::IsNullOrWhiteSpace($a)) { $a = "(none)" }
-            [System.Windows.Clipboard]::SetText($a)
-        } catch {}
-    })
+    $btnCopyAlias.Add_Click({ try { [System.Windows.Clipboard]::SetText($shownAlias) } catch {} })
     $btnRow.Children.Add($btnCopyAlias) | Out-Null
 
     $btnCopyLocal = New-Object System.Windows.Controls.Button
@@ -4655,8 +6298,7 @@ function Show-P12ValidatedDialog {
     $btnCopyAll.Margin = "0,0,10,0"
     $btnCopyAll.Add_Click({
         try {
-            $txt = "P12 Alias: $shownAlias`r`nLocal Path: $shownLocal"
-            [System.Windows.Clipboard]::SetText($txt)
+            [System.Windows.Clipboard]::SetText(("P12 Alias: $shownAlias`r`nLocal Path: $shownLocal"))
         } catch {}
     })
     $btnRow.Children.Add($btnCopyAll) | Out-Null
@@ -4673,7 +6315,6 @@ function Show-P12ValidatedDialog {
     $w.Content = $root
     $null = $w.ShowDialog()
 }
-
 function Show-Confirm3ChoiceDialog {
     param(
         [Parameter(Mandatory=$true)][string]$Title,
@@ -4699,54 +6340,8 @@ function Show-Confirm3ChoiceDialog {
     $btnSecondaryH = "#4a4f5a"
     $btnSecondaryP = "#2f3238"
 
-    function New-ThemedButtonStyle {
-        param([string]$Normal,[string]$Hover,[string]$Pressed,[string]$ForegroundHex="#FFFFFF")
-
-        $style = New-Object System.Windows.Style([System.Windows.Controls.Button])
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Normal))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::ForegroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($ForegroundHex))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BorderThicknessProperty, (New-Object System.Windows.Thickness(0))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::PaddingProperty, (New-Object System.Windows.Thickness(14,6,14,6))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::CursorProperty, [System.Windows.Input.Cursors]::Hand))) | Out-Null
-
-        $tpl = New-Object System.Windows.Controls.ControlTemplate([System.Windows.Controls.Button])
-        $border = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
-        $border.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, (New-Object System.Windows.CornerRadius(4)))
-        $border.SetValue([System.Windows.Controls.Border]::BackgroundProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Control]::BackgroundProperty)))
-
-        $cp = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ContentPresenter])
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::MarginProperty, (New-Object System.Windows.Thickness(4,1,4,1)))
-
-        $border.AppendChild($cp) | Out-Null
-        $tpl.VisualTree = $border
-
-        $tOver = New-Object System.Windows.Trigger
-        $tOver.Property = [System.Windows.Controls.Control]::IsMouseOverProperty
-        $tOver.Value = $true
-        $tOver.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Hover))))) | Out-Null
-
-        $tPress = New-Object System.Windows.Trigger
-        $tPress.Property = [System.Windows.Controls.Primitives.ButtonBase]::IsPressedProperty
-        $tPress.Value = $true
-        $tPress.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Pressed))))) | Out-Null
-
-        $tDis = New-Object System.Windows.Trigger
-        $tDis.Property = [System.Windows.Controls.Control]::IsEnabledProperty
-        $tDis.Value = $false
-        $tDis.Setters.Add((New-Object System.Windows.Setter([System.Windows.UIElement]::OpacityProperty, 0.4))) | Out-Null
-
-        $tpl.Triggers.Add($tOver)  | Out-Null
-        $tpl.Triggers.Add($tPress) | Out-Null
-        $tpl.Triggers.Add($tDis)   | Out-Null
-
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::TemplateProperty, $tpl))) | Out-Null
-        return $style
-    }
-
-    $PrimaryBtnStyle   = New-ThemedButtonStyle -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
-    $SecondaryBtnStyle = New-ThemedButtonStyle -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
+    $PrimaryBtnStyle   = New-ThemedButtonStyleSafe -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
+    $SecondaryBtnStyle = New-ThemedButtonStyleSafe -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
 
     $result = [hashtable]::Synchronized(@{ Choice = "cancel" })
 
@@ -4763,9 +6358,9 @@ function Show-Confirm3ChoiceDialog {
 
     $root = New-Object System.Windows.Controls.Grid
     $root.Margin = "18"
-    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
-    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "*"    })) | Out-Null
-    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="*"    })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
 
     $hdrRow = New-Object System.Windows.Controls.StackPanel
     $hdrRow.Orientation = "Horizontal"
@@ -4785,7 +6380,7 @@ function Show-Confirm3ChoiceDialog {
     $hdr.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgWarning)
 
     $hdrRow.Children.Add($icon) | Out-Null
-    $hdrRow.Children.Add($hdr) | Out-Null
+    $hdrRow.Children.Add($hdr)  | Out-Null
     $root.Children.Add($hdrRow) | Out-Null
     [System.Windows.Controls.Grid]::SetRow($hdrRow, 0)
 
@@ -4796,13 +6391,13 @@ function Show-Confirm3ChoiceDialog {
     $border.CornerRadius = "6"
     $border.Padding = "14"
 
-    $body = New-Object System.Windows.Controls.TextBlock
-    $body.TextWrapping = "Wrap"
-    $body.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMuted)
-    $body.FontFamily = "Consolas"
-    $body.Text = $Body
+    $bodyTb = New-Object System.Windows.Controls.TextBlock
+    $bodyTb.TextWrapping = "Wrap"
+    $bodyTb.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMuted)
+    $bodyTb.FontFamily = "Consolas"
+    $bodyTb.Text = $Body
 
-    $border.Child = $body
+    $border.Child = $bodyTb
     $root.Children.Add($border) | Out-Null
     [System.Windows.Controls.Grid]::SetRow($border, 1)
 
@@ -4898,47 +6493,8 @@ function Show-SaveProfileDialog {
     $btnSecondaryH = "#4a4f5a"
     $btnSecondaryP = "#2f3238"
 
-    function New-ThemedButtonStyle {
-        param([string]$Normal,[string]$Hover,[string]$Pressed,[string]$ForegroundHex="#FFFFFF")
-        $style = New-Object System.Windows.Style([System.Windows.Controls.Button])
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Normal))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::ForegroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($ForegroundHex))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BorderThicknessProperty, (New-Object System.Windows.Thickness(0))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::PaddingProperty, (New-Object System.Windows.Thickness(14,6,14,6))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::CursorProperty, [System.Windows.Input.Cursors]::Hand))) | Out-Null
-
-        $tpl = New-Object System.Windows.Controls.ControlTemplate([System.Windows.Controls.Button])
-        $border = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
-        $border.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, (New-Object System.Windows.CornerRadius(4)))
-        $border.SetValue([System.Windows.Controls.Border]::BackgroundProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Control]::BackgroundProperty)))
-
-        $cp = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ContentPresenter])
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::MarginProperty, (New-Object System.Windows.Thickness(4,1,4,1)))
-
-        $border.AppendChild($cp) | Out-Null
-        $tpl.VisualTree = $border
-
-        $tOver = New-Object System.Windows.Trigger
-        $tOver.Property = [System.Windows.Controls.Control]::IsMouseOverProperty
-        $tOver.Value = $true
-        $tOver.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Hover))))) | Out-Null
-
-        $tPress = New-Object System.Windows.Trigger
-        $tPress.Property = [System.Windows.Controls.Primitives.ButtonBase]::IsPressedProperty
-        $tPress.Value = $true
-        $tPress.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Pressed))))) | Out-Null
-
-        $tpl.Triggers.Add($tOver)  | Out-Null
-        $tpl.Triggers.Add($tPress) | Out-Null
-
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::TemplateProperty, $tpl))) | Out-Null
-        return $style
-    }
-
-    $PrimaryBtnStyle   = New-ThemedButtonStyle -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
-    $SecondaryBtnStyle = New-ThemedButtonStyle -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
+    $PrimaryBtnStyle   = New-ThemedButtonStyleSafe -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
+    $SecondaryBtnStyle = New-ThemedButtonStyleSafe -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
 
     $result = [hashtable]::Synchronized(@{ Ok=$false; Name="" })
 
@@ -5016,6 +6572,7 @@ function Show-SaveProfileDialog {
     $stack.Children.Add($nameBox) | Out-Null
 
     $sshDir = Join-Path ([Environment]::GetFolderPath('UserProfile')) ".ssh"
+
     $pathHdr = New-Object System.Windows.Controls.TextBlock
     $pathHdr.Text = "Will save to:"
     $pathHdr.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
@@ -5028,15 +6585,14 @@ function Show-SaveProfileDialog {
     $pathBox.FontFamily = "Consolas"
     $pathBox.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMuted)
     $pathBox.Margin = "0,0,0,0"
+    $stack.Children.Add($pathBox) | Out-Null
 
     $existsWarn = New-Object System.Windows.Controls.TextBlock
     $existsWarn.TextWrapping = "Wrap"
     $existsWarn.FontWeight = "SemiBold"
     $existsWarn.Margin = "0,10,0,6"
     $existsWarn.Visibility = "Collapsed"
-    $warnColor = $fgWarning
-    if ([string]::IsNullOrWhiteSpace($warnColor)) { $warnColor = "#f5c542" }
-    $existsWarn.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($warnColor)
+    $existsWarn.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgWarning)
     $stack.Children.Add($existsWarn) | Out-Null
 
     $script:__SaveBtnRef = $null
@@ -5076,10 +6632,7 @@ function Show-SaveProfileDialog {
     }
 
     $null = $nameBox.Add_TextChanged($updatePath)
-
     & $updatePath
-
-    $stack.Children.Add($pathBox) | Out-Null
 
     $border.Child = $stack
     $root.Children.Add($border) | Out-Null
@@ -5091,7 +6644,6 @@ function Show-SaveProfileDialog {
     $btnRow.Margin = "0,14,0,0"
 
     $btnSave = New-Object System.Windows.Controls.Button
-
     $script:__SaveBtnRef = $btnSave
     $btnSave.Content = "Save Profile"
     $btnSave.Style = $PrimaryBtnStyle
@@ -5119,7 +6671,6 @@ function Show-SaveProfileDialog {
         $result.Name = $n
         $w.Close()
     })
-    try { & $updatePath } catch {}
     $btnRow.Children.Add($btnSave) | Out-Null
 
     $btnSkip = New-Object System.Windows.Controls.Button
@@ -5164,61 +6715,8 @@ function Show-P12AliasDialog {
     $btnSecondaryH = "#4a4f5a"
     $btnSecondaryP = "#2f3238"
 
-    function New-ThemedButtonStyle {
-        param(
-            [string]$Normal,
-            [string]$Hover,
-            [string]$Pressed,
-            [string]$ForegroundHex = "#FFFFFF"
-        )
-
-        $style = New-Object System.Windows.Style([System.Windows.Controls.Button])
-
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Normal))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::ForegroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($ForegroundHex))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BorderThicknessProperty, (New-Object System.Windows.Thickness(0))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::PaddingProperty, (New-Object System.Windows.Thickness(14,6,14,6))))) | Out-Null
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::CursorProperty, [System.Windows.Input.Cursors]::Hand)) ) | Out-Null
-
-        $tpl = New-Object System.Windows.Controls.ControlTemplate([System.Windows.Controls.Button])
-
-        $border = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
-        $border.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, (New-Object System.Windows.CornerRadius(4)))
-        $border.SetValue([System.Windows.Controls.Border]::BackgroundProperty, (New-Object System.Windows.TemplateBindingExtension([System.Windows.Controls.Control]::BackgroundProperty)))
-
-        $cp = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ContentPresenter])
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
-        $cp.SetValue([System.Windows.Controls.ContentPresenter]::MarginProperty, (New-Object System.Windows.Thickness(4,1,4,1)))
-
-        $border.AppendChild($cp) | Out-Null
-        $tpl.VisualTree = $border
-
-        $tOver = New-Object System.Windows.Trigger
-        $tOver.Property = [System.Windows.Controls.Control]::IsMouseOverProperty
-        $tOver.Value = $true
-        $tOver.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Hover))))) | Out-Null
-
-        $tPress = New-Object System.Windows.Trigger
-        $tPress.Property = [System.Windows.Controls.Primitives.ButtonBase]::IsPressedProperty
-        $tPress.Value = $true
-        $tPress.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::BackgroundProperty, ([System.Windows.Media.BrushConverter]::new().ConvertFromString($Pressed))))) | Out-Null
-
-        $tDis = New-Object System.Windows.Trigger
-        $tDis.Property = [System.Windows.Controls.Control]::IsEnabledProperty
-        $tDis.Value = $false
-        $tDis.Setters.Add((New-Object System.Windows.Setter([System.Windows.UIElement]::OpacityProperty, 0.4))) | Out-Null
-
-        $tpl.Triggers.Add($tOver) | Out-Null
-        $tpl.Triggers.Add($tPress) | Out-Null
-        $tpl.Triggers.Add($tDis) | Out-Null
-
-        $style.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.Control]::TemplateProperty, $tpl))) | Out-Null
-        return $style
-    }
-
-    $PrimaryBtnStyle   = New-ThemedButtonStyle -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
-    $SecondaryBtnStyle = New-ThemedButtonStyle -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
+    $PrimaryBtnStyle   = New-ThemedButtonStyleSafe -Normal $btnPrimary   -Hover $btnPrimaryH   -Pressed $btnPrimaryP
+    $SecondaryBtnStyle = New-ThemedButtonStyleSafe -Normal $btnSecondary -Hover $btnSecondaryH -Pressed $btnSecondaryP
 
     function New-CopyRow {
         param(
@@ -5232,19 +6730,14 @@ function Show-P12AliasDialog {
 
         $lbl = New-Object System.Windows.Controls.TextBlock
         $lbl.Text = $Label
-        $lbl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00a8ff")
+        $lbl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
         $lbl.FontWeight = "SemiBold"
         $lbl.Margin = "0,0,0,4"
         $Parent.Children.Add($lbl) | Out-Null
 
         $row = New-Object System.Windows.Controls.Border
         $row.Tag = $safeValue
-        try { $null = $row.Resources.Remove("__CopyIcon") } catch {}
-        try { $null = $row.Resources.Remove("__CopyLabel") } catch {}
-        try { $row.Resources.Add("__CopyLabel", $Label) } catch {}
-
         $row.ToolTip = $Tooltip
-
         $row.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00000000")
         $row.CornerRadius = "4"
         $row.Padding = "2,2"
@@ -5257,91 +6750,53 @@ function Show-P12AliasDialog {
         $txt = New-Object System.Windows.Controls.TextBlock
         $txt.Text = $safeValue
         $txt.FontFamily = "Consolas"
-        $txt.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#b0b0b0")
+        $txt.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgMuted)
         $txt.TextWrapping = "Wrap"
         $txt.MaxWidth = 560
-        $txt.VerticalAlignment = "Center"
+        $txt.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
 
         $ico = New-Object System.Windows.Controls.TextBlock
         $ico.FontFamily = "Segoe MDL2 Assets"
         $ico.Text = [char]0xE8C8
         $ico.FontSize = 16
         $ico.Margin = "10,0,0,0"
-        $ico.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00a8ff")
-        $ico.VerticalAlignment = "Center"
+        $ico.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
+        $ico.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
 
         $inner.Children.Add($txt) | Out-Null
         $inner.Children.Add($ico) | Out-Null
-
-        try { $row.Resources["__CopyIcon"] = $ico } catch { try { $row.Resources.Add("__CopyIcon",$ico) } catch {} }
-
         $row.Child = $inner
         $Parent.Children.Add($row) | Out-Null
 
-        $hoverBg = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#22333842")
+        $hoverBg  = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#22333842")
         $normalBg = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00000000")
 
-        $row.Add_MouseEnter({
-            try { $row.Background = $hoverBg } catch {}
-        })
-        $row.Add_MouseLeave({
-            try { $row.Background = $normalBg } catch {}
-        })
+        $row.Add_MouseEnter({ try { $row.Background = $hoverBg } catch {} })
+        $row.Add_MouseLeave({ try { $row.Background = $normalBg } catch {} })
 
         $row.Add_MouseLeftButtonUp({
             param($s,$e)
             try { if ($e) { $e.Handled = $true } } catch {}
-
             try {
-                $val = ""
-                try { $val = [string]$s.Tag } catch { $val = "" }
-
-                $lbl2 = ""
-                try { $lbl2 = [string]$s.Resources["__CopyLabel"] } catch { $lbl2 = "" }
-
-                $icon2 = $null
-                try { $icon2 = $s.Resources["__CopyIcon"] } catch { $icon2 = $null }
-
+                $val = [string]$s.Tag
                 if ([string]::IsNullOrWhiteSpace($val)) { return }
 
-                try {
-                    [System.Windows.Clipboard]::SetText($val)
-                } catch {
-                    try { [System.Windows.Clipboard]::SetDataObject($val, $true) } catch {}
-                }
+                try { [System.Windows.Clipboard]::SetText($val) } catch { try { [System.Windows.Clipboard]::SetDataObject($val, $true) } catch {} }
 
-                if ($icon2 -and ($icon2 -is [System.Windows.Controls.TextBlock])) {
+                $ico.Text = [char]0xE73E
+                $ico.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#47d16c")
 
-                    $icon2.Text = [char]0xE73E
-                    $icon2.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#47d16c")
+                $timer = New-Object System.Windows.Threading.DispatcherTimer
+                $timer.Interval = [TimeSpan]::FromMilliseconds(650)
+                $timer.Add_Tick({
                     try {
-                        $icon2.Dispatcher.Invoke([Action]{}, [System.Windows.Threading.DispatcherPriority]::Render)
+                        $ico.Text = [char]0xE8C8
+                        $ico.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgAccent)
                     } catch {}
-
-                    $timer = New-Object System.Windows.Threading.DispatcherTimer
-                    $timer.Interval = [TimeSpan]::FromMilliseconds(650)
-                    $timer.Tag = $icon2
-
-                    $timer.Add_Tick({
-                        param($sender, $evt)
-                        try {
-                            $sender.Tag.Text = [char]0xE8C8
-                            $sender.Tag.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00a8ff")
-                        } catch {}
-                        try { $sender.Stop() } catch {}
-                    })
-
-                    $timer.Start()
-                }
-
-            } catch {
-                try {
-                    Add-Content -Path $global:ServerToolkitLogPath -Value (
-                        (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") +
-                        " [ERROR] Copy row failed: " + $_.Exception.ToString() + "`r`n"
-                    ) -Encoding UTF8 -ErrorAction SilentlyContinue
-                } catch {}
-            }
+                    try { $timer.Stop() } catch {}
+                })
+                $timer.Start()
+            } catch {}
         })
     }
 
@@ -5358,9 +6813,9 @@ function Show-P12AliasDialog {
 
     $root = New-Object System.Windows.Controls.Grid
     $root.Margin = "18"
-    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
-    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "*"    })) | Out-Null
-    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height = "Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="*"    })) | Out-Null
+    $root.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{ Height="Auto" })) | Out-Null
 
     $hdrRow = New-Object System.Windows.Controls.StackPanel
     $hdrRow.Orientation = "Horizontal"
@@ -5380,7 +6835,7 @@ function Show-P12AliasDialog {
     $hdr.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($fgWarning)
 
     $hdrRow.Children.Add($icon) | Out-Null
-    $hdrRow.Children.Add($hdr) | Out-Null
+    $hdrRow.Children.Add($hdr)  | Out-Null
     $root.Children.Add($hdrRow) | Out-Null
     [System.Windows.Controls.Grid]::SetRow($hdrRow, 0)
 
@@ -5403,17 +6858,12 @@ function Show-P12AliasDialog {
 
     $nid = $NodeId
     if ([string]::IsNullOrWhiteSpace($nid)) { $nid = "(not available)" }
-
     New-CopyRow -Parent $body -Label "Node ID:" -Value $nid -Tooltip "Click to copy Node ID"
 
-    $shownRemote = $RemotePath
-    if ([string]::IsNullOrWhiteSpace($shownRemote)) { $shownRemote = "(unknown)" }
-
-    $shownLocal = $LocalPath
-    if ([string]::IsNullOrWhiteSpace($shownLocal)) { $shownLocal = "(unknown)" }
+    $shownRemote = if ([string]::IsNullOrWhiteSpace($RemotePath)) { "(unknown)" } else { $RemotePath }
+    $shownLocal  = if ([string]::IsNullOrWhiteSpace($LocalPath))  { "(unknown)" } else { $LocalPath }
 
     New-CopyRow -Parent $body -Label "Uploaded to (remote path):" -Value $shownRemote -Tooltip "Click to copy Remote Path"
-
     New-CopyRow -Parent $body -Label "Local file path:" -Value $shownLocal -Tooltip "Click to copy Local Path"
 
     $border.Child = $body
@@ -5431,28 +6881,11 @@ function Show-P12AliasDialog {
     $btnCopyDetails.Margin = "0,0,10,0"
     $btnCopyDetails.Add_Click({
         try {
-            $a = $Alias
-            if ([string]::IsNullOrWhiteSpace($a)) { $a = "(none)" }
-
-            $rp = $RemotePath
-            if ([string]::IsNullOrWhiteSpace($rp)) { $rp = "(unknown)" }
-
-            $lp = $LocalPath
-            if ([string]::IsNullOrWhiteSpace($lp)) { $lp = "(unknown)" }
-
-            $n = $NodeId
-            if ([string]::IsNullOrWhiteSpace($n)) { $n = "(not available)" }
-
-            $txt = @(
-                "P12 Alias: $a"
-                "Node ID:   $n"
-                "Remote Path: $rp"
-                "Local Path:  $lp"
-            ) -join "`r`n"
-
-            $MainWindow.Dispatcher.Invoke([Action]{
-                [System.Windows.Clipboard]::SetText($txt)
-            })
+            $a = if ([string]::IsNullOrWhiteSpace($Alias)) { "(none)" } else { $Alias }
+            $n = if ([string]::IsNullOrWhiteSpace($NodeId)) { "(not available)" } else { $NodeId }
+            $rp = if ([string]::IsNullOrWhiteSpace($RemotePath)) { "(unknown)" } else { $RemotePath }
+            $lp = if ([string]::IsNullOrWhiteSpace($LocalPath)) { "(unknown)" } else { $LocalPath }
+            [System.Windows.Clipboard]::SetText(("P12 Alias: $a`r`nNode ID:   $n`r`nRemote Path: $rp`r`nLocal Path:  $lp"))
         } catch {}
     })
     $btnRow.Children.Add($btnCopyDetails) | Out-Null
@@ -5467,9 +6900,7 @@ function Show-P12AliasDialog {
     [System.Windows.Controls.Grid]::SetRow($btnRow, 2)
 
     $w.Content = $root
-    if (-not $w.IsVisible) {
-        $null = $w.ShowDialog()
-    }
+    $null = $w.ShowDialog()
 }
 
 $BrowseKeyButton.Add_Click({
@@ -5478,21 +6909,29 @@ $BrowseKeyButton.Add_Click({
     $dlg.Title  = "Select SSH Private Key File"
     $dlg.Filter = "All Files|*.*"
 
-    if (-not $dlg.ShowDialog()) {
-        return
-    }
+    $sshDir = $null
+    try { $sshDir = Join-Path ([Environment]::GetFolderPath('UserProfile')) ".ssh" } catch {}
+    if (-not $sshDir) { try { $sshDir = Join-Path $env:USERPROFILE ".ssh" } catch {} }
+
+    try {
+        if ($sshDir -and -not (Test-Path -LiteralPath $sshDir)) {
+            New-Item -ItemType Directory -Path $sshDir -Force | Out-Null
+        }
+        if ($sshDir -and (Test-Path -LiteralPath $sshDir)) {
+            $dlg.InitialDirectory = $sshDir
+        }
+    } catch {}
+
+    if (-not $dlg.ShowDialog()) { return }
 
     $chosen = $dlg.FileName
-
     if (-not (Test-Path -LiteralPath $chosen)) {
         try { $script:AppendLog.Invoke("[ERROR] Selected key file does not exist: $chosen`r`n") } catch {}
         return
     }
 
     $firstLine = $null
-    try {
-        $firstLine = (Get-Content -LiteralPath $chosen -TotalCount 1 -ErrorAction Stop)
-    } catch {
+    try { $firstLine = (Get-Content -LiteralPath $chosen -TotalCount 1 -ErrorAction Stop) } catch {
         try { $script:AppendLog.Invoke("[ERROR] Failed to read key file header: $($_.Exception.Message)`r`n") } catch {}
         return
     }
@@ -5503,10 +6942,7 @@ $BrowseKeyButton.Add_Click({
     $isOpenSSH  = ($firstLine -eq "-----BEGIN OPENSSH PRIVATE KEY-----")
     $isPEM      = ($firstLine -match "^-----BEGIN .*PRIVATE KEY-----$")
 
-    if ($isPuttyPPK) {
-        try { Show-PpkHelpDialog -PpkPath $chosen } catch {}
-        return
-    }
+    if ($isPuttyPPK) { try { Show-PpkHelpDialog -PpkPath $chosen } catch {}; return }
 
     if (-not ($isOpenSSH -or $isPEM)) {
         [System.Windows.MessageBox]::Show(
@@ -5527,12 +6963,85 @@ $BrowseKeyButton.Add_Click({
     try { $script:AppendLog.Invoke("Selected SSH private key: $chosen`r`n") } catch {}
 })
 
+if ($CreateKeyButton) {
+    $CreateKeyButton.Add_Click({
+
+        function _LogCreateKey([string]$msg) {
+            try {
+                Add-Content -Path $global:ServerToolkitLogPath -Value (
+                    (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") + " " + $msg + "`r`n"
+                ) -Encoding UTF8 -ErrorAction SilentlyContinue
+            } catch {}
+        }
+
+        function _FuncFingerprint([string]$name) {
+            try {
+                $cmd = $ExecutionContext.SessionState.InvokeCommand.GetCommand($name, "Function")
+                if (-not $cmd -or -not $cmd.ScriptBlock) { return "<missing>" }
+
+                $src = $cmd.ScriptBlock.ToString()
+                $bytes = [System.Text.Encoding]::UTF8.GetBytes($src)
+                $sha = [System.Security.Cryptography.SHA256]::Create()
+                try {
+                    $hash = ($sha.ComputeHash($bytes) | ForEach-Object { $_.ToString("x2") }) -join ""
+                } finally {
+                    $sha.Dispose()
+                }
+
+                $head = $src
+                if ($head.Length -gt 80) { $head = $head.Substring(0,80) + "..." }
+                return ("sha256=" + $hash + " head=" + ($head -replace "\r|\n"," "))
+            } catch {
+                return "<fingerprint-failed: " + $_.Exception.Message + ">"
+            }
+        }
+
+        try {
+            _LogCreateKey ("[INFO] CreateKeyButton clicked. Show-CreateSshKeyDialog " + (_FuncFingerprint "Show-CreateSshKeyDialog"))
+
+            _LogCreateKey ("[INFO] WPF types loaded: Grid=" + [System.Windows.Controls.Grid].FullName + " TextBlock=" + [System.Windows.Controls.TextBlock].FullName)
+
+            Show-CreateSshKeyDialog
+        }
+        catch {
+            $ex = $_.Exception
+
+            _LogCreateKey ("[UIERR] Create SSH Key dialog failed (top): " + $ex.GetType().FullName + ": " + $ex.Message)
+
+            try {
+                $cur = $ex
+                $depth = 0
+                while ($cur -and $depth -lt 12) {
+                    _LogCreateKey ("[UIERR] ex[" + $depth + "]=" + $cur.GetType().FullName + " msg=" + $cur.Message)
+                    $cur = $cur.InnerException
+                    $depth++
+                }
+            } catch {}
+
+            try {
+                _LogCreateKey ("[UIERR] Create SSH Key dialog full exception:`r`n" + $_.Exception.ToString())
+            } catch {}
+
+            try {
+                [System.Windows.MessageBox]::Show(
+                    $MainWindow,
+                    ("Failed to open SSH key creation window.`r`n`r`n" + $ex.Message),
+                    "Create SSH Key",
+                    [System.Windows.MessageBoxButton]::OK,
+                    [System.Windows.MessageBoxImage]::Error
+                ) | Out-Null
+            } catch {}
+        }
+
+    })
+}
+
 if ($BrowseP12Button -and $P12PathBox) {
     $BrowseP12Button.Add_Click({
         try {
             $dlg = New-Object Microsoft.Win32.OpenFileDialog
-            $dlg.Title  = "Select P12 Wallet File"
-            $dlg.Filter = "P12 Wallet File (*.p12)|*.p12|All Files|*.*"
+            $dlg.Title  = "Select P12 File"
+            $dlg.Filter = "P12 File (*.p12)|*.p12|All Files|*.*"
 
             if ($dlg.ShowDialog()) {
 
@@ -5661,6 +7170,11 @@ $MenuSaveProfile.Add_Click({
     }
 })
 
+if ($BackupP12Button) {
+    $BackupP12Button.Add_Click({
+        Invoke-P12BackupFlow
+    })
+}
 
 $MenuExit.Add_Click({
     $MainWindow.Close()
@@ -5752,7 +7266,7 @@ $StartButton.Add_Click({
         $ext = ""
         try { $ext = [IO.Path]::GetExtension($ui_p12Path).ToLower() } catch { $ext = "" }
         if ($ext -ne ".p12") {
-            try { if ($script:AppendLog) { $script:AppendLog.Invoke("[ERROR] Upload P12 is enabled, but the selected file is not a .p12 wallet file.`r`n") } } catch {}
+            try { if ($script:AppendLog) { $script:AppendLog.Invoke("[ERROR] Upload P12 is enabled, but the selected file is not a .p12 file.`r`n") } } catch {}
             try { if ($UnlockUIAction) { $UnlockUIAction.Invoke() } } catch {}
             return
         }
@@ -6198,6 +7712,7 @@ exit 0
 
                         $knownHostsPath = Join-Path $env:USERPROFILE ".ssh\known_hosts"
                         $scpArgs = @(
+                            "-p",
                             "-P", $port,
                             "-o", "StrictHostKeyChecking=accept-new",
                             "-o", "UserKnownHostsFile=$knownHostsPath",
@@ -6241,7 +7756,7 @@ exit 0
 
                         Safe-AppendLog "[INFO] Uploading P12 via PSCP as '$user' (password mode)...`r`n"
 
-                        $pscpArgs = @("-batch","-scp","-P",$port)
+                        $pscpArgs = @("-batch","-scp","-p","-P",$port)
                         $pscpArgs += @("-pw","`"$newPass`"","`"$p12LocalPath`"","${user}@${serverHost}:$remoteP12Path")
 
                         $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -6375,14 +7890,37 @@ $MainWindow.add_Closing({
     } catch {}
 })
 
+function Should-RunAgentCleanup {
+    try {
+        if ($script:SshAgentTouched -eq $true) { return $true }
+    } catch {}
+
+    try {
+        $f = Get-ServerToolkitOwnedPubKeysFile
+        if ($f -and (Test-Path -LiteralPath $f)) { return $true }
+    } catch {}
+
+    return $false
+}
+
 $MainWindow.add_Closed({
     try { Signal-SshAgentSessionEnd } catch {}
-    try { Cleanup-AgentOwnedKeys } catch {}
+    try {
+        if (Should-RunAgentCleanup) {
+            Cleanup-AgentOwnedKeys
+        }
+    } catch {}
 })
 
 try {
     Register-EngineEvent -SourceIdentifier "ServerToolkit_Exiting" -InputObject ([AppDomain]::CurrentDomain) -EventName "ProcessExit" -Action {
-        try { Cleanup-AgentOwnedKeys } catch {}
+        try {
+            if (Get-Command Should-RunAgentCleanup -ErrorAction SilentlyContinue) {
+                if (Should-RunAgentCleanup) { Cleanup-AgentOwnedKeys }
+            } else {
+                Cleanup-AgentOwnedKeys
+            }
+        } catch {}
     } | Out-Null
 } catch {}
 
@@ -6425,10 +7963,18 @@ try {
         $MainWindow.Add_ContentRendered({
             try { $script:StartupWatchdogArmed = $false } catch {}
             try { if ($script:StartupWatchdogTimer) { $script:StartupWatchdogTimer.Stop() } } catch {}
+
+            try {
+                if ($HostBox -and $HostBox.IsEnabled) {
+                    $HostBox.Focus()
+                    $HostBox.CaretIndex = $HostBox.Text.Length
+                }
+            } catch {}
+
             try {
                 Add-Content -Path $global:ServerToolkitLogPath -Value (
                     (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") +
-                    " DEBUG: ContentRendered fired; startup watchdog disarmed.`r`n"
+                    " DEBUG: ContentRendered fired; startup watchdog disarmed; HostBox focused.`r`n"
                 ) -Encoding UTF8 -ErrorAction SilentlyContinue
             } catch {}
         }) | Out-Null
