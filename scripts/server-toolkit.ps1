@@ -1774,7 +1774,7 @@ sudo -S -p """" find / -maxdepth 5 \( -type d -name incremental_snapshot -prune 
 
 
         if (-not [string]::IsNullOrWhiteSpace($KeyPath) -and -not $script:SshAgentTouched) {
-            $args += @("-i",$KeyPath)
+            $args += @("-i", "`"$KeyPath`"")
         }
 
         $args += "$User@$RemoteHost"
@@ -1898,7 +1898,7 @@ function Get-RemoteSha256 {
         "-o","GlobalKnownHostsFile=NUL",
         "-p",$Port
     )
-    if (-not [string]::IsNullOrWhiteSpace($KeyPath)) { $args += @("-i",$KeyPath) }
+    if (-not [string]::IsNullOrWhiteSpace($KeyPath)) { $args += @("-i","`"$KeyPath`"") }
     $args += "$User@$RemoteHost"
     $args += "`"$($cmd.Replace('"','\"'))`""
 
@@ -2000,7 +2000,7 @@ function Download-RemoteP12PreserveMetadata {
             "-o","GlobalKnownHostsFile=NUL",
             "-p",$Port
         )
-        if (-not [string]::IsNullOrWhiteSpace($KeyPath)) { $args += @("-i",$KeyPath) }
+        if (-not [string]::IsNullOrWhiteSpace($KeyPath)) { $args += @("-i","`"$KeyPath`"") }
         $args += "$User@$RemoteHost"
         $rc = $remoteCmd.Replace('"','\"')
         $args += "`"$rc`""
@@ -3193,7 +3193,7 @@ if ($OpenServerButton) {
                 "-o", "GlobalKnownHostsFile=NUL"
             )
 
-            if (-not [string]::IsNullOrWhiteSpace($k)) { $probeArgs += @("-i", $k) }
+            if (-not [string]::IsNullOrWhiteSpace($k)) { $probeArgs += @("-i", "`"$k`"") }
 
             $probeArgs += "$u@$h"
             $probeArgs += "exit"
@@ -4022,7 +4022,7 @@ echo "=== SNAPSHOT_END ==="
         )
 
         if (-not [string]::IsNullOrWhiteSpace($KeyPath)) {
-            $args += @("-i",$KeyPath)
+            $args += @("-i", "`"$KeyPath`"")
         }
 
         $args += "$User@$RemoteHost"
@@ -4114,7 +4114,7 @@ function Run-SshCommand {
     )
 
     if (-not [string]::IsNullOrWhiteSpace($KeyPath)) {
-        $args += @("-i", $KeyPath)
+        $args += @("-i", "`"$KeyPath`"")
     }
 
     $args += "$User@$RemoteHost"
