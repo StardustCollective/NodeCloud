@@ -1,4 +1,4 @@
-$scriptversion = "1.0"
+$scriptversion = "1.1"
 
 try {
     $global:ServerToolkitLogPath = Join-Path $env:USERPROFILE "server-toolkit.log"
