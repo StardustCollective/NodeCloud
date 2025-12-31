@@ -1321,7 +1321,10 @@ $script:AppendLog = [Action[string]]{
 
             if (-not $GuiShowDebug) {
 
-                if ($line -match "(?i)\b(CLEANUP:|OWNED_KEYS:|PROFILE_PROMPT_CHECK)\b") {
+                if ($lvl -in @("WARN","ERROR","FATAL")) {
+                    $showInGui = $true
+                }
+                elseif ($line -match "(?i)\b(CLEANUP:|OWNED_KEYS:|PROFILE_PROMPT_CHECK)\b") {
                     $showInGui = $false
                 }
                 elseif ($line -match "TASKWATCH_") {
@@ -3440,6 +3443,8 @@ $script:TaskResult = [hashtable]::Synchronized(@{
     Key        = ""
     Prompt     = 0
 
+    Success    = 0
+
     RootDisabled = 0
 
     StatusTitle   = ""
@@ -3582,7 +3587,9 @@ function Start-TaskWatchTimer {
 
                 try {
                     if ($script:OfferSaveProfileFunc -and $script:TaskResult -and
-                        -not [string]::IsNullOrWhiteSpace($script:TaskResult.ServerHost)) {
+                        -not [string]::IsNullOrWhiteSpace($script:TaskResult.ServerHost) -and
+                        ([int]$script:TaskResult.Success -eq 1) -and
+                        ([int]$script:TaskResult.Prompt -eq 1)) {
 
                         $pf = 0
                         try { $pf = [int]$script:TaskResult.Prompt } catch { $pf = 0 }
@@ -7361,6 +7368,7 @@ $StartButton.Add_Click({
         $script:TaskResult.User       = ""
         $script:TaskResult.Key        = ""
         $script:TaskResult.Prompt     = 0
+        $script:TaskResult.Success    = 0
         $script:TaskResult.RootDisabled = 0
 
         $script:TaskResult.StatusTitle   = ""
@@ -7432,11 +7440,14 @@ $StartButton.Add_Click({
 
             try {
                 if ($TaskResult) {
+                    # Fill these so we can use them later if the connection is verified
                     $TaskResult.ServerHost = $serverHost
                     $TaskResult.SshPort    = $port
                     $TaskResult.User       = $user
                     $TaskResult.Key        = $keyPath
-                    $TaskResult.Prompt     = 1
+
+                    $TaskResult.Prompt     = 0
+                    $TaskResult.Success    = 0
                 }
             } catch {}
 
@@ -7518,8 +7529,21 @@ $StartButton.Add_Click({
             $probeExit = Run-RemoteCommand -cmd "echo CONNECTED" -TimeoutMs 8000
             if ($probeExit -ne 0) {
                 Safe-AppendLog "[FATAL] SSH connection failed. Aborting.`r`n"
+                try {
+                    if ($TaskResult) {
+                        $TaskResult.Success = 0
+                        $TaskResult.Prompt  = 0
+                    }
+                } catch {}
                 return
             }
+
+            try {
+                if ($TaskResult) {
+                    $TaskResult.Success = 1
+                    $TaskResult.Prompt  = 1
+                }
+            } catch {}
 
             if ($doCreateNonRoot) {
 
