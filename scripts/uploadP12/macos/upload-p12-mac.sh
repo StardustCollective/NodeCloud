@@ -36,13 +36,24 @@ read -p "Press Enter to begin..."
 
 choose_file() {
     local prompt="$1"
+    local start_dir="$2"
     local result
 
-    result=$(osascript <<EOF
-set f to choose file with prompt "$prompt"
+    if [[ -n "$start_dir" ]]; then
+        result=$(osascript <<EOF
+set startFolder to POSIX file "$start_dir" as alias
+set f to choose file with prompt "$prompt" default location startFolder with invisibles
 POSIX path of f
 EOF
 )
+    else
+        result=$(osascript <<EOF
+set f to choose file with prompt "$prompt" with invisibles
+POSIX path of f
+EOF
+)
+    fi
+
     echo "$result"
 }
 
@@ -248,7 +259,7 @@ if [[ "$USE_KEY" =~ ^[Yy]$ ]]; then
     echo ""
     echo -e "${CYAN}Select your SSH private key...${NC}"
 
-    SSH_KEY=$(choose_file "Select your SSH private key")
+    SSH_KEY=$(choose_file "Select your SSH private key" "$HOME/.ssh")
 
     if [[ -z "$SSH_KEY" ]]; then
         echo -e "${YELLOW}! No key selected. Falling back to password auth.${NC}"
@@ -313,7 +324,7 @@ if [[ -z "$SSH_KEY" ]]; then
                 ;;
             2)
                 echo ""
-                IMPORTED=$(choose_file "Select your SSH private key")
+                IMPORTED=$(choose_file "Select your SSH private key" "$HOME/.ssh")
                 if [[ -n "$IMPORTED" ]]; then
                     if install_pubkey "$USERNAME" "$SERVER" "$IMPORTED"; then
                         test_ssh_key "$USERNAME" "$SERVER" "$IMPORTED"
